@@ -15,11 +15,49 @@ Add Spike's **bot username** to `creatures.json` (copy `creatures.example.json`)
 
 Elliott will send the exact username once Spike's Discord bot exists.
 
+## One more thing for Bolt's side: people talking to Spike
+
+When Caelan typed "Hi Spike!", **Bolt** answered. His listener sends every plain human message to
+Bolt, whoever it's addressed to. The fix is in `discord_listener()`, at the very end, where human
+talk goes into the inbox. Replace
+
+```python
+            else:
+                inbox(TALK, f"{who}|{re.sub(r'[|]', ' ', text)[:1500]}")
+```
+
+with
+
+```python
+            else:
+                others = fellow_creatures()               # bot username -> creature name
+                ref = ((m.get("referenced_message") or {}).get("author") or {}).get("username", "").lower()
+                for_another = ref in others or any(re.search(rf"\b{re.escape(c)}\b", text, re.I) for c in others.values())
+                if for_another and not re.search(rf"\b{re.escape(NAME)}\b", text, re.I):
+                    continue                              # "Hi Spike!" or a reply to Spike: that's for Spike
+                inbox(TALK, f"{who}|{re.sub(r'[|]', ' ', text)[:1500]}")
+```
+
+A message that names both ("Bolt, Spike, stop fighting") still reaches Bolt. `GUARD.human_spoke()`
+already ran higher up, so a human talking to Spike still ends Bolt's creature break.
+
+## Post layout
+
+Spike's posts use Bolt's layout, so the channel reads as one town, and Bolt's parser sees them the
+way it sees his own posts:
+
+- **Diary:** `**2026-10-28 14:49** [fir, clear, energy 62] why -> what happened (+1)`. The timestamp
+  at the start makes Bolt read it as narration.
+- **Paintings:** the same line with `painted "Title" for Caelan -> ...`, plus the image.
+- **Talk:** `**time**` then `**Caelan:** Hi Spike!` then `**Spike:** ...`, posted as a Discord reply.
+  Bolt only reads the `**Spike:**` lines as Spike's words.
+- **To Bolt:** `**Spike:** Bolt! ...`, or a Discord reply to one of Bolt's posts.
+
 ## How Spike matches Bolt's rules
 
 | Bolt's rule | What Spike does |
 |---|---|
-| Only hears a creature's own words when they name Bolt, @mention him or reply to him | Everything aimed at Bolt starts with `Bolt!`. Diary lines and painting posts start with `*`, so Bolt reads them as narration, not talk. |
+| Only hears a creature's own words when they name Bolt, @mention him or reply to him | Talk aimed at Bolt is a `**Spike:** Bolt! ...` line or a Discord reply to Bolt's post. Diary lines and paintings start with a timestamp, so Bolt reads them as narration, not talk. |
 | Same creature at most once per 10 minutes, timed when the listener reads it (polls every 5 s) | Waits **11** minutes between messages to Bolt, so none lands a few seconds early and gets dropped |
 | 4 creature exchanges in a row with no human, then an hour off (a human message ends it) | Counts the same streak and waits out the same hour |
 | 30 a day per creature | At most 24 a day, 4 an hour |

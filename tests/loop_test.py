@@ -95,6 +95,15 @@ def their_words(text, name):
     return text
 
 
+def aimed_at_bolt(m):
+    """A jay post meant for Bolt: a gift, his own line naming Bolt, or a Discord reply to one of Bolt's posts."""
+    text = m["content"]
+    if text.lower().startswith("!give bolt "):
+        return True
+    ref = ((m.get("referenced_message") or {}).get("author") or {}).get("id")
+    return ref == BOLT_ID or bool(re.search(r"\bBolt\b", their_words(text, "Spike"), re.I))
+
+
 class Guard:
     """Port of creature.py CreatureGuard."""
     GAP, STREAK, REST, DAILY, GIFTS = 600, 4, 3600, 30, 3
@@ -148,7 +157,7 @@ class FakeBolt:
         return h >= 22 or h < 6
 
     def drop(self, m, why):
-        if m["content"].lower().startswith(("bolt", "!give bolt")):
+        if aimed_at_bolt(m):
             self.dropped[why] = self.dropped.get(why, 0) + 1
 
     def from_jay(self, m):
@@ -270,7 +279,7 @@ def run(mode, days, seed=1):
         clock.sleep(30)
 
     msgs = ch.msgs
-    to_bolt = [m for m in msgs if m["author"]["id"] == JAY_ID and m["content"].lower().startswith(("bolt", "!give bolt"))]
+    to_bolt = [m for m in msgs if m["author"]["id"] == JAY_ID and aimed_at_bolt(m)]
     per_hour, per_day = {}, {}
     for m in to_bolt:
         t = datetime.fromtimestamp(m["t"])

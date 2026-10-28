@@ -198,6 +198,19 @@ def match_item(name, options):
     return None
 
 
+def stamp(dt):
+    """Bolt's diary timestamp. A post that starts with one is narration to Bolt, not talk."""
+    return f"**{dt:%Y-%m-%d %H:%M}**"
+
+
+def feel(f):
+    return f"+{f}" if f > 0 else str(f)
+
+
+def no_md(text):
+    return str(text or "").replace("*", "").strip()
+
+
 def no_command(text):
     """Model-written text must never start with ! or /: Bolt (and his launcher) treat that as a command."""
     return text.lstrip("!/ \t")
@@ -1003,8 +1016,11 @@ class Jay:
 
         mode = self.cfg["post_diary"]
         if mode == "all" or (mode == "special" and special):
-            # starts with '*': Bolt reads these as narration, not as talk aimed at him
-            st["outbox"].append({"text": f"*\U0001F4D3 {diary.replace('*', '')}*", "t": self.clock.time()})
+            # Bolt's diary layout; the leading timestamp tells Bolt it's narration, not talk aimed at him
+            why = no_md(act["why"])
+            st["outbox"].append({"text": f"{stamp(v['now'])} [{st['place']}, {v['sky']}, energy {st['energy']:.0f}] "
+                                         + (f"{why} -> " if why else "") + f"{no_md(diary)} ({feel(feeling)})",
+                                 "t": self.clock.time()})
 
         if st["tick"] - st["last_reflect_tick"] >= self.cfg["reflect_every_ticks"]:
             self._reflect(st, new_mems)
@@ -1294,7 +1310,8 @@ class Jay:
         if not msg:
             return "You opened your beak to call to Bolt, then didn't.", False, 0
         self.sent_to_bolt(st, talk=True)
-        st["outbox"].append({"text": f"Bolt! {msg}", "t": self.clock.time()})
+        st["outbox"].append({"text": f"{stamp(self.clock.now())}\n**{st['name']}:** Bolt! {no_md(msg)}",
+                             "t": self.clock.time()})
         return f"You called out to Bolt on Discord: \"{msg}\". He might answer later.", True, 0
 
     def _do_give_bolt(self, st, act, v):
@@ -1373,7 +1390,7 @@ class Jay:
         if job["kind"] == "daily":
             why = "The day is ending. Before you sleep, paint something from today."
         else:
-            why = (f"{job['by']} asked you to paint: \"{job['subject'] or 'whatever you want'}\". "
+            why = (f"{job['by'] or 'Someone'} asked you to paint: \"{job['subject'] or 'whatever you want'}\". "
                    "Take it literally or loosely; it's your painting.")
         today = [m["text"] for m in self.memories if m["t"][:10] == self._today() and m["action"] != "paint"][-10:]
         past = []
@@ -1478,9 +1495,10 @@ class Jay:
             st["last_daily_paint"] = today
         st["prefs"]["paint"] = st["prefs"].get("paint", 0.0) * 0.97 + feeling
         st["mood"] = clamp(st["mood"] * 0.9 + feeling, -10, 10)
-        for_who = f" (for {job['by']})" if job["by"] else ""
-        title = plan["title"].replace("*", "")
-        st["outbox"].append({"text": f"*\U0001F3A8 {title}{for_who}*\n{diary}\n-# a stranger saw: {seen['sees'] or '...'}",
+        for_who = f" for {job['by']}" if job["by"] else ""
+        st["outbox"].append({"text": f"{stamp(v['now'])} [{st['place']}, {v['sky']}, energy {st['energy']:.0f}] "
+                                     f"painted \"{no_md(plan['title'])}\"{for_who} -> {no_md(diary)} ({feel(feeling)})\n"
+                                     f"-# a stranger saw: {no_md(seen['sees']) or '...'}",
                              "t": self.clock.time(), "file": str(pdir / fname), "reply_to": job["msg_id"]})
         special = pid == 1 or score >= 0.8 or abs(feeling) == 2 or leveled
         self._commit(st, [self._mem(st, entry["t"], "paint",
@@ -1575,6 +1593,8 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
         st = self.state
         first = st["discord_cursor"] is None
         msgs = self.discord.fetch(after=st["discord_cursor"], limit=50 if not first else 20)
+        if first and not msgs:
+            st["discord_cursor"] = "0"     # empty channel: we're caught up, so answer from now on
         for m in msgs:
             st["discord_cursor"] = m["id"]
             a = m.get("author") or {}
@@ -1649,8 +1669,6 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
         text = no_command(clean(obj.get("reply"), 600))
         if not text:
             return
-        if bolt and not text.lower().startswith("bolt"):
-            text = f"Bolt! {text}"      # Bolt only listens to us when a message is plainly addressed to him
         fact = clean(obj.get("remember"), 160)
         if fact and fact not in person["facts"]:
             person["facts"] = (person["facts"] + [fact])[-20:]
@@ -1659,7 +1677,13 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
             self.sent_to_bolt(st, talk=True)
         else:
             st["replies"].append(now)
-        st["outbox"].append({"text": text, "t": now, "reply_to": m["id"]})
+        said = no_md(content)
+        if bolt:   # quote just what Bolt said, not his whole post
+            lines = re.findall(r"^\*\*Bolt:\*\*\s*(.+)$", content, re.M)
+            said = no_md(lines[-1]) if lines else said
+        # Bolt's conversation layout. It goes out as a Discord reply, which is also how Bolt knows it's for him.
+        st["outbox"].append({"text": f"{stamp(self.clock.now())}\n**{no_md(who)}:** {clean(said, 300)}\n"
+                                     f"**{st['name']}:** {no_md(text)}", "t": now, "reply_to": m["id"]})
         self.remember(self._mem(st, self.clock.now().isoformat(timespec="seconds"), "talk",
                                 f"{who} said \"{clean(content, 200)}\" and I said \"{text}\"", 1, bolt))
         self.save()
@@ -1838,7 +1862,7 @@ def main():
     if "--paint" in sys.argv:         # paint one picture right now: python jay.py --paint "the lake in a storm"
         i = sys.argv.index("--paint")
         subject = sys.argv[i + 1] if len(sys.argv) > i + 1 else ""
-        jay.queue_painting(jay.state, "request", "you", subject)
+        jay.queue_painting(jay.state, "request", None, subject)
         jay.state["paint_queue"][-1]["force"] = True
         log(jay.paint_next() or "he didn't paint (see the log above)")
         jay.flush_outbox()

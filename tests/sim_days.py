@@ -153,7 +153,7 @@ class FakeDiscord:
         if file_path:
             assert Path(file_path).exists(), f"posting a painting that isn't on disk: {file_path}"
             self.files += 1
-        to_bolt = text.startswith(("Bolt! ", "!give ", "!leave ")) or str(reply_to) in self.bolt_ids
+        to_bolt = ":** Bolt! " in text or text.startswith(("!give ", "!leave ")) or str(reply_to) in self.bolt_ids
         self.sent.append((self.clock.time(), text, to_bolt))
 
     def set_nick(self, nick):
