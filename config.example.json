@@ -1,0 +1,29 @@
+{
+  "_readme": "Copy this to config.json and fill in the Discord ids. Keys starting with _ are ignored. Secrets go in environment variables, never here.",
+
+  "model": "gpt-5-nano",
+  "reasoning_effort": "minimal",
+  "price_in_per_m": 0.05,
+  "price_cached_in_per_m": 0.005,
+  "price_out_per_m": 0.40,
+  "daily_budget_usd": 0.25,
+
+  "tick_seconds": 300,
+  "reflect_every_ticks": 24,
+
+  "discord_channel_id": "",
+  "owner_discord_id": "",
+  "bolt_user_id": "",
+  "bolt_accepts_bots": false,
+
+  "max_bolt_messages_per_hour": 4,
+  "min_seconds_between_bolt_messages": 660,
+  "max_gifts_to_bolt_per_day": 3,
+  "max_replies_per_hour": 20,
+  "post_diary": "special",
+
+  "daily_painting": true,
+  "max_paintings_per_day": 6,
+  "paint_width": 400,
+  "paint_height": 300
+}
