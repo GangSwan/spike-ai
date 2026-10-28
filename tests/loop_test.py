@@ -5,11 +5,13 @@ Two-bot loop test: the real jay vs. a stand-in for Bolt that copies Bolt's Disco
 Bolt modes:
   off     - Bolt ignores every bot (creature.py before the creature update)
   naive   - Bolt hears every jay post and answers all of it (just deleting the bot filter)
-  caelan  - Bolt's own creature protection, ported from creature.py (cjmcc855-stack/bolt @ fc6058f):
+  caelan  - Bolt's own creature protection, ported from creature.py (cjmcc855-stack/bolt @ d4778d8):
             only lines the creature itself speaks, only when they name/mention/reply to Bolt,
             once per 10 min (timed when the listener reads it, up to 5 s late), 4 in a row with no
             human -> an hour off, 30 a day, exact repeats ignored, nothing while asleep, no
             commands except !give (3 a day, '!give <creature> ...' goes to that creature).
+            A creature message that comes too soon waits its turn; human messages meant for
+            another creature ("hey Spike") are left for it.
 
 In every mode Bolt answers instantly (worst case) and quotes the speaker:  **Spike:** ...\\n**Bolt:** ...
 and posts a diary line every 5 minutes while awake (asleep 22:00-06:00).
@@ -110,7 +112,7 @@ class Guard:
 
     def __init__(self):
         self.last, self.seen, self.daily, self.gifts = {}, [], {}, {}
-        self.streak, self.quiet_until = 0, 0.0
+        self.streak, self.quiet_until, self.waiting = 0, 0.0, {}
 
     def human_spoke(self):
         self.streak, self.quiet_until = 0, 0.0
@@ -118,10 +120,13 @@ class Guard:
     def hear(self, who, words, t, awake):
         key = re.sub(r"[^a-z]+", "", words.lower())[:200]
         if not awake:
+            self.waiting.pop(who, None)
             return "asleep"
         if t < self.quiet_until:
+            self.waiting.pop(who, None)
             return "resting after a streak"
         if t - self.last.get(who, 0) < self.GAP:
+            self.waiting[who] = words          # @ 4778d8: the newest one waits its turn instead of being lost
             return "too soon"
         if not key or key in self.seen:
             return "repeat"
@@ -136,10 +141,29 @@ class Guard:
             self.streak, self.quiet_until = 0, t + self.REST
         return None
 
+    def due(self, t, awake):
+        out = []
+        for who, words in list(self.waiting.items()):
+            if t - self.last.get(who, 0) >= self.GAP:
+                del self.waiting[who]
+                if not self.hear(who, words, t, awake):
+                    out.append((who, words))
+        return out
+
     def gift_ok(self, who, t):
         day = (who, datetime.fromtimestamp(t).date())
         self.gifts[day] = self.gifts.get(day, 0) + 1
         return self.gifts[day] <= self.GIFTS
+
+
+def for_another_creature(m):
+    """Port of creature.py for_another_creature() @ 06c1033: a human message that names or replies to
+    another creature, and doesn't name Bolt, is left for that creature."""
+    text = m["content"]
+    if re.search(r"\bBolt\b", text, re.I):
+        return False
+    ref = ((m.get("referenced_message") or {}).get("author") or {}).get("username", "").lower()
+    return ref == JAY_AUTHOR["username"] or bool(re.search(r"\bSpike\b", text, re.I))
 
 
 class FakeBolt:
@@ -151,6 +175,7 @@ class FakeBolt:
         self.replies_to_jay = 0
         self.guard = Guard()
         self.dropped = {}         # why Bolt ignored a jay message that was aimed at him
+        self.answered_for_spike = 0
 
     def asleep(self):
         h = self.clock.now().hour
@@ -194,6 +219,8 @@ class FakeBolt:
         return ("Spike", words)
 
     def step(self):
+        if self.mode == "caelan":
+            self.inbox += self.guard.due(self.clock.time(), not self.asleep())
         for m in self.ch.after(self.last, 20):
             self.last = m["id"]
             if str(m["author"]["id"]) == BOLT_ID:
@@ -205,8 +232,13 @@ class FakeBolt:
                         self.inbox.append(hit)
                 continue
             self.guard.human_spoke()
-            if not m["content"].startswith("!"):
-                self.inbox.append(("Elliott", m["content"]))
+            if m["content"].startswith("!"):
+                continue
+            if self.mode == "caelan" and for_another_creature(m):
+                continue
+            if for_another_creature(m):
+                self.answered_for_spike += 1     # Bolt answering "hey Spike" (what happened before 06c1033)
+            self.inbox.append(("Elliott", m["content"]))
         if self.inbox:                                   # has_mail() -> tick right away (worst case: instantly)
             talk = [(w, t) for w, t in self.inbox if not t.startswith("/give ")]
             gifts = [(w, t) for w, t in self.inbox if t.startswith("/give ")]
@@ -299,7 +331,8 @@ def run(mode, days, seed=1):
     gifts_got = sum(it["count"] for it in jay.state["inv"].values() if it["kind"] == "gift")
     return {"mode": mode, "jay_to_bolt": len(to_bolt), "max_per_hour": max(per_hour.values(), default=0),
             "max_per_day": max(per_day.values(), default=0), "bolt_replies_to_jay": bolt.replies_to_jay,
-            "longest_reply_chain": longest, "dropped_by_bolt": bolt.dropped, "commands_leaked": leaked[:3],
+            "longest_reply_chain": longest, "dropped_by_bolt": bolt.dropped,
+            "bolt_took_spikes_msgs": bolt.answered_for_spike, "commands_leaked": leaked[:3],
             "named_gifts": f"{gifts_got}/{gifts_named}", "cfg": cfg}
 
 
@@ -319,6 +352,7 @@ def main():
         ]
         if mode == "caelan":
             checks.append((r["bolt_replies_to_jay"] <= days * 30, "Bolt answered the jay more than 30 times a day"))
+            checks.append((r["bolt_took_spikes_msgs"] == 0, "Bolt answered people who were talking to Spike"))
             wasted = {k: v for k, v in r["dropped_by_bolt"].items() if k not in ("resting after a streak", "asleep")}
             checks.append((not wasted, f"the jay sent Bolt things he was always going to ignore: {wasted}"))
         for passed, why in checks:

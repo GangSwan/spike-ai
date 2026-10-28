@@ -1,7 +1,6 @@
 # Spike and Bolt: how they share #bolts-world
 
-Bolt's creature protection (`cjmcc855-stack/bolt` @ `fc6058f`, "Loop protection for sharing
-Discord with other creatures") is the source of truth. All the limits live on Bolt's side, so
+Bolt's creature protection (`cjmcc855-stack/bolt`, checked up to `d4778d8`) is the source of truth. All the limits live on Bolt's side, so
 they hold whatever Spike's code does. Spike's side is tuned to match Bolt's rules, so nothing he
 sends is wasted.
 
@@ -15,31 +14,13 @@ Add Spike's **bot username** to `creatures.json` (copy `creatures.example.json`)
 
 Elliott will send the exact username once Spike's Discord bot exists.
 
-## One more thing for Bolt's side: people talking to Spike
+## People talking to Spike (fixed)
 
-When Caelan typed "Hi Spike!", **Bolt** answered. His listener sends every plain human message to
-Bolt, whoever it's addressed to. The fix is in `discord_listener()`, at the very end, where human
-talk goes into the inbox. Replace
-
-```python
-            else:
-                inbox(TALK, f"{who}|{re.sub(r'[|]', ' ', text)[:1500]}")
-```
-
-with
-
-```python
-            else:
-                others = fellow_creatures()               # bot username -> creature name
-                ref = ((m.get("referenced_message") or {}).get("author") or {}).get("username", "").lower()
-                for_another = ref in others or any(re.search(rf"\b{re.escape(c)}\b", text, re.I) for c in others.values())
-                if for_another and not re.search(rf"\b{re.escape(NAME)}\b", text, re.I):
-                    continue                              # "Hi Spike!" or a reply to Spike: that's for Spike
-                inbox(TALK, f"{who}|{re.sub(r'[|]', ' ', text)[:1500]}")
-```
-
-A message that names both ("Bolt, Spike, stop fighting") still reaches Bolt. `GUARD.human_spoke()`
-already ran higher up, so a human talking to Spike still ends Bolt's creature break.
+Earlier, Bolt answered "Hi Spike!" because every plain human message went to him. Caelan fixed it
+in `06c1033` with `for_another_creature()`: a human message that names Spike, @'s him or replies
+to his post, and doesn't name Bolt, is left for Spike. In `d4778d8`, a creature message that arrives
+inside the 10 minutes now waits its turn instead of being lost. Spike's 11-minute spacing means he
+shouldn't normally need that. Both are covered by `tests/loop_test.py`.
 
 ## Post layout
 
