@@ -4,8 +4,19 @@ A young Steller's jay living in Bolt's town under Mount Shasta. Nobody gives him
 Every 5 minutes of daylight he looks around, checks his energy and mood, and decides what
 to do. He sleeps at night (no model calls). He names himself on his first morning.
 
-- **Brain:** OpenAI `gpt-5-nano`, 2–5 short calls per waking tick. A few cents a day, with
-  a hard daily cap (`daily_budget_usd`, default $0.25).
+- **Brain:** OpenAI `gpt-5-mini` decides what to do each turn and answers people and creatures
+  (`decision_model`, `talk_model`); `gpt-5-nano` writes his diary, reactions and everything else
+  (`model`). 2–5 short calls per waking turn, a few cents a day, with a hard daily cap
+  (`daily_budget_usd`, default $0.25). Prices per model are in `prices`.
+- **How he decides:** needs build up as he lives (hungry, tired, curious, wanting company, wanting
+  to make something, to hunt treasure, to cache food, to make noise, to roam), pulled harder by his
+  body, the time of day (food in the morning, roaming and making things midday, painting and caching
+  toward dusk) and the season (fall is caching season). Each turn he's offered about 5 things drawn
+  by those needs, by what he's enjoyed and by today's goals, and the model picks one. Doing the same
+  thing 5 turns running puts it off the menu for about an hour; an hour in one place makes him
+  restless. Every morning he sets 1–3 goals of his own and looks back on them at night. What he likes
+  and dislikes is capped at ±3 so nothing runs away with him. With the shared town on he knows where
+  Bolt is (once the town sends `around`) and can go find him.
 - **World:** Bolt's 14 places, plus his own roost (the old fir). Real Shasta weather from
   Open-Meteo, seasons, day/night, energy.
 - **Jay stuff:**
@@ -177,6 +188,14 @@ python tests/habits_test.py
 This checks everything he does Bolt's way, exactly: reading, look_up, notebooks, examine, changing
 his mind, tinkering (gifts never used), painting on his own, plain talk, people, gift reactions,
 ruts, calls, being woken at night, the console, book orders and tested restarts.
+
+```bash
+python tests/autonomy_test.py
+```
+
+This checks how he decides: needs, the daily menu, boredom, goals, capped preferences, which model
+each call uses, no parroting, names, and knowing where Bolt is. The big one: a brain that always
+says "snatch" still lives a varied day (no one thing over 40%, at least 6 things and 4 places).
 
 ```bash
 python tests/loop_test.py 3

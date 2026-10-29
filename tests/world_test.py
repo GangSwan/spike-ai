@@ -39,12 +39,14 @@ class ScriptBrain:
     def __init__(self):
         self.plan, self.prompts = [], []
 
-    def ask(self, system, user, max_tokens=1200, image_b64=None):
+    def ask(self, system, user, max_tokens=1200, image_b64=None, **kw):
         self.prompts.append(user)
         if '"reply"' in user:
             return {"reply": "Caw yourself, Bolt."}, 0.0
         if '"diary"' in user:
             return {"diary": "Did a thing.", "feeling": 1}, 0.0
+        if '"goals"' in user:
+            return {"goals": []}, 0.0
         if '"who_i_am"' in user:
             return {"who_i_am": "A jay who lives in a shared town now.", "how_i_talk": "Loud.",
                     "about_bolt": "Bolt is right there, a crow."}, 0.0
@@ -91,6 +93,15 @@ class Base(unittest.TestCase):
         if not jay.state["name"]:
             jay.state["name"] = "Spike"
             jay.save()
+        if brain is None:      # these tests script his choices, so the scripted one is always on his menu
+            real = jay.shortlist
+
+            def menu(st, v, acts):
+                want = self.brain.plan[0]["action"] if self.brain.plan else "watch"
+                if want not in acts:
+                    return real(st, v, acts)
+                return [want] + [a for a in acts if a != want][:4], jay.urges(st, v)
+            jay.shortlist = menu
         return jay
 
     def restart_spike(self):
