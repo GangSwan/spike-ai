@@ -203,6 +203,31 @@ def run(tmp):
     check(j2.state["people"] == {"Elliott": {"facts": ["works on cars"], "talks": 3}}, "people he knew by username move to their name")
     check(j2.author_name({"username": "cj_123", "global_name": "i eat legos"}) == "Caelan", "names.json works by display name too")
 
+    print("eating, caching and sounds")
+    j = make(tmp / "j")
+    st = j.state
+    j.inv_add(st, "beetle", "food", 1)
+    j.inv_add(st, "peanut", "food", 1)
+    out = j._do_eat(st, {"action": "eat", "target": "juicy worm", "item": "", "why": ""}, j.view(st))[0]
+    check(out == "You ate a peanut.", f"naming food he doesn't have, he eats the best food he does have ({out})")
+    out = j._do_cache(st, {"action": "cache", "target": "a big acorn", "item": "", "why": ""}, j.view(st))[0]
+    check(out.startswith("You hid a beetle"), f"same for caching ({out[:40]})")
+    st["place"] = "junkyard"
+    out = j._do_mimic(st, {"action": "mimic", "target": "red-tailed hawk scream", "item": "", "why": ""}, j.view(st))[0]
+    check("You'd hear one at the summit" in out and J.failed(out), "a sound he can't learn here says where to hear it, and isn't progress")
+    out = j._do_mimic(st, {"action": "mimic", "target": "red-tailed hawk call", "item": "", "why": ""}, j.view(st))[0]
+    check("You'd hear one at the summit" in out, "even when he calls it a hawk 'call' instead of a 'scream'")
+    check("junkyard dog bark" in j.actions(st, j.view(st))["mimic"], "the menu says which sound he can learn here")
+    j.state["goals"] = {"date": None, "list": []}
+    j.brain.goals = []
+    j._set_goals(st, j.view(st))
+    goal_prompt = [u for m, u in j.brain.calls if '"goals"' in u][-1]
+    check("red-tailed hawk scream at the summit" in goal_prompt, "morning goals know where each sound lives")
+    j.inv_add(st, "juicy worm from Elliott", "gift", from_="Elliott")
+    j.save()
+    j2 = J.Jay(j.cfg, j.dir, Brain(), clock=j.clock)
+    check(j2.state["inv"]["juicy worm from Elliott"].get("eaten"), "food gifts from before are marked eaten on load")
+
     print("knowing where Bolt is")
     j = make(tmp / "i")
     j.world = type("W", (), {"creature": "spike"})()
