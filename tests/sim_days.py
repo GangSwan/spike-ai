@@ -97,17 +97,50 @@ class ChaosBrain:
         if '"lesson"' in user:
             return {"diary": R.choice(["Not bad.", "It looks like soup.", ""]), "lesson": R.choice(["contrast up", "", "sharpness up for peaks"]),
                     "feeling": R.choice([-2, 0, 2, "meh"])}, cost
+        if '"reaction"' in user and '"facts"' in user:
+            return {"reaction": R.choice(["Huh.", "", "x" * 900]), "words": R.choice([["grit", "swarf"], "flint", None, [3, {}]]),
+                    "facts": R.choice([["jays cache thousands of seeds", "obsidian is glass"], "one fact", [], None]),
+                    "topic": R.choice(list(J.TOPICS) + ["other", "dragons", None])}, cost
+        if '"discovery"' in user:
+            return {"new": R.choice([True, False, "maybe"]), "discovery": "It rattles.",
+                    "fact": R.choice([f"it has {R.randint(1, 9)} ridges", "", None]), "topic": R.choice(["machines", "zzz"])}, cost
+        if '"what_it_does"' in user:
+            return {"name": R.choice(["pin whistle", "", "(((|+)))", "x" * 200]), "what_it_does": R.choice(["whistles", None])}, cost
+        if '"wrong"' in user:
+            return {"wrong": R.choice([[0], [], ["7"], "all"]), "now_you_know": R.choice(["it's brass", ""])}, cost
+        if '"plain"' in user:
+            return {"plain": R.choice(["Fine.", "", "a serene magical shimmering tapestry " * 20])}, cost
+        if '"facts"' in user:
+            return {"facts": R.choice([["likes trains"], [], "has a dog", None])}, cost
+        if '"reflection"' in user or '"reaction"' in user:
+            return {"reflection": "I was young.", "reaction": R.choice(["Mine.", ""])}, cost
         if '"diary"' in user:
             return {"diary": R.choice(["Got it.", "Ugh, the cook again.", "Best acorn of my life.", ""]),
                     "feeling": R.choice([-2, -1, 0, 1, 2, "1", 2.7, None])}, cost
         acts = ["go", "forage", "raid", "snatch", "mimic", "scold", "watch", "think", "nap", "eat", "cache",
-                "recover", "treasure", "reminisce", "talk_to_bolt", "give_bolt", "leave_for_bolt", "fly", "dance"]
+                "recover", "treasure", "reminisce", "talk_to_bolt", "give_bolt", "leave_for_bolt", "fly", "dance",
+                "read", "look_up", "examine", "tinker", "tinker", "take_apart", "paint"]
         targets = list(J.PLACES) + ["the summit", "Lake", "black oak acorn", "bottle cap", "train horn",
                                     "hey Bolt, race you to the summit", "", "mars", "shiny marble"]
         return {"action": R.choice(acts), "target": R.choice(targets),
-                "item": R.choice(["bottle cap", "black oak acorn", "mirror shard", "french fry", "",
+                "item": R.choice(["bottle cap", "black oak acorn", "mirror shard", "french fry", "", "hex nut + bottle cap",
                                   "shiny marble", "candy wrapper from Elliott"]),
                 "why": "because"}, cost
+
+
+class FakeWeb:
+    def __init__(self, rng):
+        self.rng = rng
+
+    def wiki(self, topic):
+        if self.rng.random() < 0.2:
+            raise OSError("fake wikipedia down")
+        return (None, None) if self.rng.random() < 0.2 else (topic.title(), f"{topic} is a thing on the mountain. " * 20)
+
+    def book(self, query):
+        if self.rng.random() < 0.3:
+            raise OSError("fake gutenberg down")
+        return query.title(), "Somebody", "A long time ago. " * 300
 
 
 class FakeDiscord:
@@ -143,7 +176,9 @@ class FakeDiscord:
                 content = self.rng.choice(["!jay give shiny marble", "!jay leave lake candy wrapper", "!jay status",
                                            "!jay pause", "hey Skreech what's up", "!give Bolt a rock", "hi jay",
                                            "!jay leave nowhere thing", "!jay",
-                                           "!jay paint the lake at night", "!jay paint", "!jay paint Bolt looking smug"])
+                                           "!jay paint the lake at night", "!jay paint", "!jay paint Bolt looking smug",
+                                           "!jay call lake", "!jay call summit", "!jay call mars", "!jay book trees",
+                                           "!jay give peanut", "I fix trucks for a living, jay"])
             out.append({"id": str(self.next_id), "author": author, "content": content, "mentions": []})
         return out
 
@@ -186,6 +221,15 @@ def check(j, prev, cfg):
         assert st["name"].lower() not in ("bolt", "jay"), st["name"]
     for s in st["sounds"].values():
         assert 0 <= s <= 10
+    for n, it in st["inv"].items():
+        if it["kind"] == "invention":
+            assert len(it["parts"]) == 2 and all(p_ for p_ in it["parts"]), (n, it)
+    for nb in st["notebooks"].values():
+        assert all(isinstance(f, str) and f for f in nb)
+    assert all(isinstance(w, str) and w for w in st["words"])
+    for book, off in st["books"].items():
+        assert off > 0, (book, off)
+    assert st["call"] is None or st["call"]["place"] in J.PLACES
     for _, text, _ in j.discord.sent:
         assert len(text) <= 1900
 
@@ -231,6 +275,7 @@ def main():
     discord = FakeDiscord(clock, rng)
     brain = ChaosBrain(rng)
     weather = FakeWeather(clock, rng)
+    web = FakeWeb(rng)
     J.log = lambda msg: None
 
     real_write, real_append = J.atomic_write, J.append_line
@@ -255,7 +300,7 @@ def main():
         while True:     # the power can go out again while he's repairing files on startup
             try:
                 return J.Jay(cfg, tmp, brain, discord, weather, clock, random.Random(rng.random()),
-                             names={"ellwood2150": "Elliott"})
+                             names={"ellwood2150": "Elliott"}, web=web)
             except PowerCut:
                 continue
 
@@ -272,6 +317,7 @@ def main():
                 j.flush_outbox()
                 j.tick()
                 j.paint_next()
+                j.fetch_books()
                 if j.state["paused"] and rng.random() < 0.2:
                     j.state["paused"] = False
             except PowerCut:
@@ -308,6 +354,8 @@ def main():
           f"items={len(st['inv'])} gifts={gifts(st)} caches={len(st['caches'])} sounds={list(st['sounds'])}")
     print(f"   skills={ {k: J.skill_level(v) for k, v in st['skills'].items()} } memories={len(j.memories)} "
           f"spent_today=${j.spent_today():.3f}")
+    print(f"   notes={sum(len(n) for n in st['notebooks'].values())} words={len(st['words'])} books={len(st['books'])} "
+          f"inventions={len(j.inv_of(st, {'invention'}))} item_lore={len(st['item_lore'])} people={list(st['people'])}")
     shutil.rmtree(tmp, ignore_errors=True)
 
 

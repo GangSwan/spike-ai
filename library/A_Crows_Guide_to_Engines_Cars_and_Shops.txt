@@ -1,0 +1,88 @@
+A CROW'S GUIDE TO ENGINES, CARS, AND SHOPS
+What the humans are doing in the garage, the shop, and the drift lot
+
+----------------------------------------------------------------------
+
+WHY HUMANS LOVE MACHINES
+
+Humans can't fly, so they built machines that carry them faster than any bird. Then some of them fell in love with the machines themselves: fixing them, building them, making them louder, faster, and stranger. If you see a human lying under a car on a cold morning and swearing at it, that is love.
+
+----------------------------------------------------------------------
+
+PART ONE: HOW AN ENGINE WORKS
+
+Most cars run on an engine that burns gasoline. Inside it are round holes called cylinders, and inside each cylinder is a piston, a metal plug that slides up and down. Every piston does four steps, over and over, very fast. Mechanics remember them as "suck, squeeze, bang, blow":
+
+1. Suck (intake): the piston slides down and pulls in air mixed with a tiny mist of fuel.
+2. Squeeze (compression): the piston slides up and squeezes that mix into a small space.
+3. Bang (power): a spark plug makes a tiny lightning bolt, the mix explodes, and the blast shoves the piston down hard. This is where the power comes from.
+4. Blow (exhaust): the piston slides up again and pushes the burned gas out the exhaust pipe. That's the rumble you hear.
+
+THE SPARK PLUG: a little ceramic and metal plug screwed into the top of each cylinder. It makes the spark that lights the fuel, thousands of times a minute. If you've found an old spark plug, its tip probably has a gap where the spark used to jump.
+
+THE CRANKSHAFT: the pistons push on a long, bent metal shaft called the crankshaft, which turns their up-and-down pushing into spinning, the same way legs pushing pedals spin a bicycle wheel. That spin eventually turns the wheels.
+
+THE CAMSHAFT: every cylinder has little doors called valves that let air in and exhaust out at exactly the right moment. A camshaft is a spinning rod with egg-shaped bumps on it, called lobes, that push the valves open at just the right time. The exact shape of those lobes changes how an engine breathes and how it sounds. Long ago, old-school machinists shaped camshafts by hand, measuring and cutting metal to a fraction of the thickness of a hair. It is real craftsmanship.
+
+COUNTING CYLINDERS: a small engine might have four cylinders in a row. A "V6" has six cylinders in two rows of three, shaped like the letter V. A V8 has eight. More cylinders usually means smoother and more powerful, and a deeper sound.
+
+----------------------------------------------------------------------
+
+PART TWO: WHEELS, TIRES, AND LUG NUTS
+
+LUG NUTS: the big nuts that hold a wheel onto a car, usually four, five, or six per wheel. They're tightened in a star pattern, crossing back and forth, so the wheel pulls on evenly. A loose lug nut is a dangerous thing. A chrome lug nut is a fancy one.
+
+TIRES: rubber gripping the road is the only thing keeping a car pointed where it's supposed to go. Tires that are worn smooth, called bald, lose grip, especially in rain and snow.
+
+BRAKES: when the driver presses the brake pedal, pads squeeze against metal discs on the wheels and slow them down by friction, which turns all that speed into heat. Brakes can get hot enough to glow.
+
+THE HUB: the round metal piece at the end of each axle that the wheel bolts onto. It spins with the wheel.
+
+WHEEL STUDS: threaded steel posts sticking out of the hub. The wheel slides over them, and the lug nuts screw onto them.
+
+WHEEL SPACERS: flat, round metal discs, usually aluminum, that sit between the hub and the wheel. Their whole job is to push the wheel farther out from the car. People use them to make a car's stance wider, so the wheels sit right out at the edge of the fenders (drift cars and show cars love that look), to give the wheel more room to clear the brakes or suspension, and to widen the track, which changes how the car handles in a slide. There are two kinds. A slip-on spacer is a thin disc with holes that slides over the studs that are already there, and only thin ones work that way, because the studs still have to reach through far enough to hold the lug nuts. A bolt-on spacer is thicker: it bolts to the hub with its own nuts and has its own studs sticking out for the wheel to mount on. A hub-centric spacer has a raised lip in the middle that fits the hub exactly, so the wheel stays perfectly centered. A spacer has nothing to do with fire, sparks, or fuel; it's all about where the wheel sits. Like lug nuts, spacers have to be tightened properly and checked again after driving, because a loose spacer is as dangerous as a loose wheel. A dark grey or colored spacer is usually anodized aluminum: aluminum with a hard, colored skin grown onto it.
+
+----------------------------------------------------------------------
+
+PART THREE: DRIFTING
+
+Drifting is a kind of driving where the car slides sideways through corners on purpose, rear end swinging out, tires screaming, with smoke pouring off them. The trick is to control the slide the whole way, steering against it and using the gas pedal to keep it going without spinning out.
+
+REAR-WHEEL DRIVE: drift cars almost always send their power to the back wheels only. When the back tires spin and lose grip, the back of the car can swing out while the front tires keep steering. That's the slide.
+
+THE HANDBRAKE: many drift cars have a special handbrake, a lever that locks the rear wheels for a moment to kick the car into a slide.
+
+TIRE SMOKE: when a tire spins faster than the car is moving, it rubs against the pavement so hard that the rubber heats up and burns off as white smoke. The little balls of rubber all over a drift lot are bits of tires that came off this way. Drift tires wear out fast, so drifters go through a lot of them.
+
+TANDEM: when two cars drift together, one chasing the other, close enough to almost touch. It's dangerous, beautiful, and very loud.
+
+People who drift often become a big family: they help fix each other's cars, lend each other parts, and spend whole weekends at the track together.
+
+----------------------------------------------------------------------
+
+PART FOUR: THE SHOPS
+
+THE GARAGE: where cars get fixed. Common tools: wrenches and sockets (metal tools that grip nuts and bolts and turn them), jacks and jack stands to lift a car up safely, and an impact gun that rattles loudly and spins stubborn nuts off. A 10mm socket is famous among mechanics for always getting lost. If you find one, a mechanic somewhere is looking for it.
+
+THE MACHINE SHOP: where metal parts are made from scratch.
+A LATHE spins a piece of metal very fast while a sharp, hard cutting tool shaves it into shape. It makes round things: shafts, pins, rings, bolts. The shiny curls of metal on the floor are called chips or swarf.
+A MILL holds the metal still while a spinning cutter carves it, for flat surfaces, slots, and holes.
+A MICROMETER is a measuring tool that can measure the thickness of something to a thousandth of an inch, thinner than a hair.
+
+WELDING: joining two pieces of metal by melting them together with a very hot electric arc, so they become one piece when they cool. The arc is so bright it can hurt your eyes, which is why welders wear dark masks. Little blobs of melted metal left behind are called spatter or slag.
+
+THE GRINDER: a spinning abrasive wheel that wears metal away. It throws showers of bright orange sparks, which are tiny bits of metal so hot they glow.
+
+----------------------------------------------------------------------
+
+PART FIVE: AMBULANCES
+
+An ambulance is a truck built to carry sick or hurt people to the hospital and help them on the way. The back is a box full of medical gear. Ambulances run hard. They drive in all weather, at all hours, often in a hurry, which means they need a lot of care: tires, brakes, oil, and countless small fixes. The people who keep ambulances running make sure they start every single time, because when someone needs help, an ambulance can't break down.
+
+----------------------------------------------------------------------
+
+PART SIX: OLD CARS AND THE BARN
+
+Old classic cars, decades old, are kept by people who love them, sometimes under dust covers in barns, to protect their paint from sun and dust. Some people spend years restoring one, hunting down original parts, rebuilding the engine piece by piece. Old car parts, like hood ornaments, emblems, and badges, are collected and treasured. An old car isn't just a machine to the person who kept it. It's a memory.
+
+THE END
