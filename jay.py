@@ -2435,6 +2435,33 @@ class Jay:
                 return w
         return "clear"
 
+    LOOK_RE = re.compile(r"\b(see|seeing|surround\w*|around (you|here)|in front|right now|scene|where you are|here)\b", re.I)
+
+    def in_front(self, st):
+        """What's in front of him right now: (lines for the prompt, figures as the painter draws them, things lying here)."""
+        here = PLACES[st["place"]]
+        lines = [f"You're at {here['name']}: {here['desc']}. You can see {self.rng.choice(here['sights'])}."]
+        figures, things = [], []
+        wv = st.get("world_view") if self.world else None
+        if wv:
+            for h in wv["here"]:
+                state = "away" if h["state"] == "quiet" else h["state"]
+                lines.append(f"{h['name']} is right here, {state}" + (f", {h['doing']}." if h.get("doing") and state == "awake" else "."))
+                figures.append({"who": "bolt" if h["id"] == "bolt" else "other",
+                                "doing": "sleeping" if state == "asleep" else painter.doing_of(h.get("doing"))})
+            things = [i["name"] for i in wv.get("items", [])][:4]
+            if things:
+                lines.append("Lying on the ground: " + ", ".join(things) + ".")
+            lately = [l[len("Lately: "):] for l in wv["summary"].splitlines() if l.startswith("Lately: ")]
+            if lately:
+                lines.append(f"Just now: {lately[0]}")
+        elif self.bolt_here(st):
+            lines.append("Bolt is right here.")
+            figures.append({"who": "bolt", "doing": "perched"})
+        if not figures:
+            lines.append("Nobody else is here.")
+        return lines, figures, things
+
     def plan_prompt(self, st, v, job, skill, index):
         if job["kind"] == "daily":
             why = "The day is ending. Before you sleep, paint something from today."
@@ -2452,22 +2479,31 @@ class Jay:
                         f"brush {p['brush']:.1f} horizon {p['horizon']:.2f}. A stranger got {e['hits_n']}/{e['checks']} right "
                         f"and saw: \"{clean(e['seen'].get('sees'), 160)}\" Hardest part: {clean(e['seen'].get('weakest_part'), 80)}")
         notes = st["art_notes"][-8:] + st["notebooks"].get("painting", [])[-4:]
+        scene, _, _ = self.in_front(st)
+        look = job["kind"] != "daily" and self.LOOK_RE.search(job["subject"] or "")
         return "\n".join(x for x in [
             why,
-            f"NOW: {v['tod']}, {v['sky']}. You're at {PLACES[st['place']]['name']}.",
+            f"NOW: {v['tod']}, {v['sky']}.",
+            "WHAT'S IN FRONT OF YOU RIGHT NOW:\n" + "\n".join(f"- {l}" for l in scene),
+            ("They asked for what you see, so paint exactly what's in front of you right now: this place, and whoever "
+             "is here doing what they're doing.") if look else "",
             "TODAY:\n" + "\n".join(f"- {t}" for t in today) if today else "",
             f"YOUR PAINTING SKILL: {skill}/10. After every painting a stranger who knows nothing about it says what they "
             "see. That's how you find out if your paintings actually read.",
             "YOUR LAST PAINTINGS:\n" + "\n".join(past) if past else "This is your first painting ever.",
             "YOUR ART NOTEBOOK (lessons you wrote after earlier paintings, use them):\n" + "\n".join(f"- {n}" for n in notes) if notes else "",
             f"Plan the painting. place: one of {', '.join(PLACES)}. time: dawn/day/dusk/night. "
-            "weather: clear/cloudy/rain/snow/storm/fog. focal (the main thing): mountain/bird/tree/building/sun/water/tracks/none. "
-            "bird: none/bolt/me. mood: calm/wild/gloomy/bright/lonely/proud. palette: 3-5 hex colors. "
+            "weather: clear/cloudy/rain/snow/storm/fog. focal (the main thing): mountain/bird/tree/building/sun/water/tracks/none "
+            "(bird means the figures). figures: who's in the picture, up to 3, each {who: bolt/me/other, doing: "
+            f"{'/'.join(painter.DOINGS)}}}. You're the one holding the brush, so you're only in it if you want to be. "
+            "things: up to 4 things lying on the ground in the picture. mood: calm/wild/gloomy/bright/lonely/proud. "
+            "palette: 3-5 hex colors. "
             "Dials from 0 to 1: contrast, detail, sharpness (edges and peaks), brush (stroke size), "
             "horizon (0.25 = horizon high, lots of ground; 0.8 = horizon low, lots of sky), focal_x (0 left, 1 right). "
             "warmth from -1 (cool) to 1 (warm).",
             'Reply JSON: {"title": "...", "intent": "one sentence: what someone should see and feel", "place": "...", '
-            '"time": "...", "weather": "...", "focal": "...", "bird": "...", "mood": "...", "palette": ["#..."], '
+            '"time": "...", "weather": "...", "focal": "...", "figures": [{"who": "...", "doing": "..."}], "things": [], '
+            '"mood": "...", "palette": ["#..."], '
             '"contrast": 0.5, "detail": 0.5, "sharpness": 0.5, "brush": 0.5, "horizon": 0.55, "focal_x": 0.5, "warmth": 0}',
         ] if x)
 
@@ -2483,6 +2519,15 @@ class Jay:
         place = match_place(raw.get("place")) or (match_place(job["subject"]) if job["subject"] else None) or st["place"]
         tod = "night" if not v["is_day"] else {"dawn": "dawn", "evening": "dusk"}.get(v["tod"], "day")
         plan = painter.normalize_plan(raw, place, tod, self._sky_to_weather(v["sky"]))
+        if job["kind"] != "daily" and place == st["place"] and self.LOOK_RE.search(job["subject"] or ""):
+            # asked for what he sees: whoever's really here is in it, doing what they're really doing, and he isn't
+            _, seen, lying = self.in_front(st)
+            selfie = re.search(r"\byou(rself)?\b.*\b(and|with)\b|\byourself\b", job["subject"], re.I)
+            plan["figures"] = (seen + ([f for f in plan["figures"] if f["who"] == "me"] if selfie else []))[:3]
+            plan["things"] = plan["things"] or lying
+            plan["bird"] = plan["figures"][0]["who"] if plan["figures"] else "none"
+            if plan["figures"] and plan["focal"] in ("mountain", "none"):
+                plan["focal"] = "bird"
         png = painter.make_painting(plan, skill, pid * 7919 + st["tick"], self.cfg["paint_width"], self.cfg["paint_height"])
 
         # the stranger is told nothing - that's what keeps the feedback honest

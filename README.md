@@ -56,6 +56,11 @@ to do. He sleeps at night (no model calls). He names himself on his first mornin
   often strangers recognize his place, time, weather, mood and main subject, so it's measurable.
   Low skill means wobbly shapes, muddy colors and scribbly strokes; high skill means clean edges
   and strokes that follow the forms. About $0.0005 per painting. Open `data/gallery.html` to see them all.
+  He paints what's actually in front of him: up to three birds, each doing something you can see (at
+  a synth with patch cables, fishing with a red bobber, tinkering in sparks, reading, at an easel,
+  eating, singing, asleep), plus things lying around, and a fine-brush pass keeps them readable. Ask
+  "paint what you see" and whoever is really there goes in, doing what they're really doing; he's
+  holding the brush, so he isn't in it unless asked.
 - **Bolt:** he reads Bolt's diary posts and figures out where Bolt is. Through Discord he can
   `talk_to_bolt` and `give_bolt`, rate-limited to match Bolt's own creature rules (see [BOLT_SIDE.md](BOLT_SIDE.md)).
 - **Memory:**

@@ -228,6 +228,45 @@ def run(tmp):
     j2 = J.Jay(j.cfg, j.dir, Brain(), clock=j.clock)
     check(j2.state["inv"]["juicy worm from Elliott"].get("eaten"), "food gifts from before are marked eaten on load")
 
+    print("painting what he sees")
+    P = J.painter
+    plan = P.normalize_plan({"figures": [{"who": "Bolt", "doing": "tinkering with his synthesizer"},
+                                         {"who": "spike", "doing": "eats"}, {"who": "wren", "doing": "zzz"}, {"who": "x"}]},
+                            "machine_shop", "day", "clear")
+    check(plan["figures"] == [{"who": "bolt", "doing": "synth"}, {"who": "me", "doing": "eating"}, {"who": "other", "doing": "perched"}],
+          f"any way of saying who and what turns into something he can draw ({plan['figures']})")
+    old_plan = P.normalize_plan({"bird": "bolt"}, "lake", "day", "clear")
+    check(old_plan["figures"] == [{"who": "bolt", "doing": "perched"}], "an old-style plan with one bird still works")
+    ok = True
+    for i, d in enumerate(P.DOINGS):
+        pl = P.normalize_plan({"figures": [{"who": "bolt", "doing": d}, {"who": "me", "doing": d}], "things": ["gold ring", "acorn", "rag"]},
+                              "junkyard", "night" if i % 2 else "day", "snow" if i % 3 == 0 else "clear")
+        ok = ok and P.png_ok(P.make_painting(pl, i % 11, i, 120, 90))
+    check(ok, "every activity paints, alone and side by side")
+
+    j = make(tmp / "k")
+    j.world = type("W", (), {"creature": "spike"})()
+    j.state["place"] = "machine_shop"
+    j.state["world_view"] = {"here": [{"id": "bolt", "name": "Bolt", "state": "awake", "doing": "playing his synth"}],
+                             "items": [{"id": "i1", "name": "brass shaving", "by": "Bolt", "for": None}], "cant_go": {},
+                             "summary": "Afternoon at the machine shop.\nBolt is here, awake, playing his synth.\nLately: Bolt is playing his synth.",
+                             "around": []}
+    j.brain.act = {"title": "Me and the Mountain", "focal": "mountain", "bird": "me", "figures": [{"who": "me", "doing": "perched"}],
+                   "intent": "me again", "place": "machine_shop"}
+    j.queue_painting(j.state, "request", "Elliott", "what you see")
+    j.paint_next()
+    asked = [u for m, u in j.brain.calls if '"figures"' in u][-1]
+    check("Bolt is right here, awake, playing his synth" in asked and "paint exactly what's in front of you" in asked,
+          "planning, he's told what's in front of him")
+    entry = J.load_json(j.dir / "paintings" / "index.json", [])[-1]
+    check(entry["plan"]["figures"] == [{"who": "bolt", "doing": "synth"}],
+          f"asked what he sees, Bolt at his synth is in it and he isn't ({entry['plan']['figures']})")
+    check(entry["plan"]["things"] == ["brass shaving"] and entry["plan"]["focal"] == "bird", "with what's lying there, and Bolt as the subject")
+    j.queue_painting(j.state, "request", "Elliott", "the lake at dusk")
+    j.paint_next()
+    entry = J.load_json(j.dir / "paintings" / "index.json", [])[-1]
+    check(entry["plan"]["figures"] == [{"who": "me", "doing": "perched"}], "any other request is his own choice")
+
     print("knowing where Bolt is")
     j = make(tmp / "i")
     j.world = type("W", (), {"creature": "spike"})()
