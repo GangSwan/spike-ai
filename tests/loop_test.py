@@ -264,7 +264,7 @@ class PushyBrain:
     def __init__(self):
         self.n = 0
 
-    def ask(self, system, user, max_tokens=1200, image_b64=None):
+    def ask(self, system, user, max_tokens=1200, image_b64=None, **kw):
         if '"name"' in user:
             return {"name": "Spike", "why": "sharp"}, 0.0001
         if '"reply"' in user:

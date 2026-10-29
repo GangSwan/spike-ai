@@ -2,6 +2,8 @@
   "_readme": "Copy this to config.json and fill in the Discord ids. Keys starting with _ are ignored. Secrets go in environment variables, never here.",
 
   "model": "gpt-5-nano",
+  "decision_model": "gpt-5-mini",
+  "talk_model": "gpt-5-mini",
   "reasoning_effort": "minimal",
   "price_in_per_m": 0.05,
   "price_cached_in_per_m": 0.005,

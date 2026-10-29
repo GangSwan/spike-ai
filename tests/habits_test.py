@@ -51,7 +51,7 @@ class Brain:
         self.n = 0
         self.prompts = []
 
-    def ask(self, system, user, max_tokens=1200, image_b64=None):
+    def ask(self, system, user, max_tokens=1200, image_b64=None, **kw):
         self.prompts.append(user)
         self.n += 1
         if '"reaction"' in user and '"facts"' in user:
@@ -108,6 +108,8 @@ def make(tmp, hour=10, rng=None):
 def act(j, action, target="", item=""):
     """One turn; returns what happened (the outcome his reaction prompt was shown)."""
     j.brain.act = {"action": action, "target": target, "item": item, "why": "felt like it"}
+    # these tests are about what an action does, so it's always on his menu (the menu has its own tests)
+    j.shortlist = lambda st, v, acts: (([action] if action in acts else []) + [a for a in acts if a != action], j.urges(st, v))
     out = j.tick()
     seen = [p for p in j.brain.prompts if "WHAT HAPPENED: " in p]
     return f"{out.split(' ', 1)[0]} {seen[-1].split('WHAT HAPPENED: ', 1)[1].split(chr(10))[0]}" if seen else out
