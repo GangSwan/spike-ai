@@ -233,6 +233,14 @@ def run(tmp):
     j.console_line("!give peanut")
     check(st["energy"] == energy + 15 and "peanut from Elliott" in st["inv"], "a food gift feeds him and stays in his hoard")
     check(st["outbox"][-1]["text"] == "**Spike:** A peanut! Mine.", "and he reacts to it")
+    check(st["inv"]["peanut from Elliott"].get("eaten") and "peanut from Elliott (you ate it" in j.inv_summary(st),
+          "his things say he ate it, so he won't try to eat it again")
+    j.brain.reply = "I ate it right away. Thanks."
+    j.console_line("Spike did you get the peanut?")
+    asked = [p for p in j.brain.prompts if "did you get the peanut" in p and '"reply"' in p][-1]
+    check("GIFTS I GOT LATELY: peanut from Elliott (I ate it right away)" in asked and "MY THINGS:" in asked,
+          "asked about a gift, his reply can see what he has and what he was given")
+    check("Don't promise to fetch or find things that don't exist" in asked, "and is told not to make things up")
 
     print("calls")
     j = make(tmp / "f")

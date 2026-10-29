@@ -429,7 +429,8 @@ STREAK_BENCH, BENCH_TICKS = 5, 12     # the same thing 5 turns running: off the 
 RESTLESS_AFTER = 12           # turns (about an hour) in one place before he gets itchy wings
 NOT_GOALS = {"think", "watch", "nap", "eat", "talk_to_bolt", "give_bolt", "leave_for_bolt"}
 FAIL_WORDS = ("came up empty", "chased you off", "couldn't", "came out as a squawk", "fell apart", "nothing out right now",
-              "was watching", "was stuck", "turned out to be a puddle", "too worn out")
+              "was watching", "was stuck", "turned out to be a puddle", "too worn out", "haven't heard it properly",
+              "didn't have")
 BOOK_HINTS = {   # which books help with which actions (by words in the file name)
     "forage": ["jays", "animals"], "raid": ["jays"], "snatch": ["rocks", "gems"], "mimic": ["jays", "birds"],
     "tinker": ["tinker", "metal", "engines"], "paint": ["painting"], "recover": ["jays"],
@@ -854,6 +855,9 @@ class Jay:
             self.state["skills"].setdefault(sk, 0)
         for d in DRIVES:
             self.state["drives"].setdefault(d, 0.0)
+        for n, it in self.state["inv"].items():            # food gifts were always eaten the moment they arrived
+            if it["kind"] == "gift" and "eaten" not in it and (EDIBLE.search(item_key(n)) or item_key(n).lower() in ALL_FOODS):
+                it["eaten"] = True
         for k, val in self.state["prefs"].items():         # older versions let these grow without limit
             self.state["prefs"][k] = clamp(val, -3, 3)
         for old, new in self.names.items():                # people he knew by username, now by name
@@ -984,7 +988,8 @@ class Jay:
     def inv_summary(self, st):
         parts = []
         for kind, label in (("food", "food"), ("shiny", "shiny things"), ("invention", "things I built"), ("gift", "gifts")):
-            names = [f"{n} x{st['inv'][n]['count']}" if st['inv'][n]['count'] > 1 else n
+            names = [(f"{n} x{st['inv'][n]['count']}" if st['inv'][n]['count'] > 1 else n)
+                     + (" (you ate it; it's a memory now, not food)" if st["inv"][n].get("eaten") else "")
                      for n in self.inv_of(st, {kind})]
             if names:
                 more = f" (+{len(names) - 12} more)" if len(names) > 12 else ""
@@ -1053,7 +1058,8 @@ class Jay:
             a["raid"] = "steal people food" + ("" if self.raid_open(st, v) else " (probably nothing out right now)")
         if here["items"]:
             a["snatch"] = "look for shiny things to grab"
-        a["mimic"] = "practice or learn a sound (target = sound name, optional)"
+        a["mimic"] = (f"practice or learn a sound (target = sound name, optional; the one you can learn here: "
+                      f"{here['sound'] or 'none'})")
         a["scold"] = f"yell an alarm call at {here['threat']}"
         a["watch"] = "sit and watch what's going on here"
         a["think"] = "think about something (put it in why)"
@@ -1187,6 +1193,8 @@ class Jay:
                  f"food you could cache for winter: {', '.join(self.inv_of(st, {'food'})[:5])}"
                  if self.inv_of(st, {"food"}) and v["season"] in ("fall", "winter") else "",
                  f"places you haven't been in a while: {', '.join(self.places_to_go(st))}",
+                 "sounds you could learn, and where you hear them: "
+                 + ", ".join(f"{p['sound']} at {p['name']}" for p in PLACES.values() if p["sound"] and p["sound"] not in st["sounds"]),
                  "Bolt lives in town too" if self.world else "",
                  "you paint pictures; a stranger tells you what they see"]
         allowed = sorted(a[4:] for a in dir(self) if a.startswith("_do_") and a[4:] not in NOT_GOALS)
@@ -1656,6 +1664,12 @@ class Jay:
         lvl = self._level(st, "mimic")
         known, learnable = st["sounds"], self.learnable_sounds(st)
         s = match_item(act["target"], list(known) + learnable) if act["target"] else None
+        if not s and act["target"]:           # a sound from somewhere else: say so instead of quietly copying the local one
+            sounds = [p["sound"] for p in PLACES.values() if p["sound"]]
+            want = set(re.findall(r"[a-z']{3,}", act["target"].lower())) - {"call", "sound", "noise", "cry", "song"}
+            s = match_item(act["target"], sounds) or next(
+                (x for x in sorted(sounds, key=lambda x: -len(want & set(re.findall(r"[a-z']{3,}", x.lower()))))
+                 if len(want & set(re.findall(r"[a-z']{3,}", x.lower()))) >= 2), None)
         if not s:
             fresh = [x for x in learnable if x not in known]
             s = fresh[0] if fresh else (max(known, key=known.get) if known else learnable[0])
@@ -1669,7 +1683,9 @@ class Jay:
             self.world_queue(st, "sound", text=clean(f"a {grade} {s}", 60))
             return f"You practiced your {s} ({grade}, {q:.0f}/10) and {effect}." + self._xp(st, "mimic"), False, 2
         if s not in learnable:
-            return f"You tried to do a {s} from memory, but you haven't heard it properly here.", False, 1
+            where = [p["name"] for p in PLACES.values() if p["sound"] and (p["sound"] == s or s in p["sound"] or p["sound"] in s)]
+            return (f"You tried to do a {s} from memory, but you haven't heard it properly here."
+                    + (f" You'd hear one at {where[0]}." if where else ""), False, 1)
         tries = st["learning"].get(s, 0) + 1
         if tries >= 3 or self.rng.random() < 0.35 + 0.06 * lvl:
             st["learning"].pop(s, None)
@@ -1687,7 +1703,8 @@ class Jay:
         return f"You screamed your alarm call at {here['threat']} until you felt better.", False, 2
 
     def _do_cache(self, st, act, v):
-        food = pick(act, self.inv_of(st, {"food"}))
+        foods = self.inv_of(st, {"food"})
+        food = pick(act, foods) or (self.rng.choice(foods) if foods else None)
         if not food or not self.inv_take(st, food):
             return "You went to hide some food but you didn't have what you thought you had.", False, 1
         st["caches"].append({"id": st["next_cache_id"], "food": food, "place": st["place"],
@@ -1714,9 +1731,10 @@ class Jay:
         return f"You couldn't find your {c['food']}. You know it's around here somewhere.", False, 2
 
     def _do_eat(self, st, act, v):
-        food = pick(act, self.inv_of(st, {"food"}))
+        foods = self.inv_of(st, {"food"})
+        food = pick(act, foods) or max(foods, key=lambda f: FOOD_ENERGY.get(f, 6), default=None)
         if not food or not self.inv_take(st, food):
-            return "You looked for a snack but didn't have it.", False, 0
+            return "You looked for a snack but didn't have one.", False, 0
         gain = FOOD_ENERGY.get(food, 6)
         st["energy"] = clamp(st["energy"] + gain, 0, 100)
         return f"You ate a {food}.", False, 0
@@ -2222,6 +2240,18 @@ class Jay:
                        "things, or something you know.")
         return ""
 
+    def grounding(self, st):
+        """What a reply needs so it can't invent things: what he has, what he was just given, the truth rule."""
+        gifts = sorted(((it.get("first", ""), n) for n, it in st["inv"].items() if it["kind"] == "gift"), reverse=True)[:3]
+        lines = [f"MY THINGS: {self.inv_summary(st)}"]
+        if gifts:
+            lines.append("GIFTS I GOT LATELY: " + "; ".join(
+                n + (" (I ate it right away)" if st["inv"][n].get("eaten") else "") for _, n in gifts))
+        lines.append("Only say you have, did or will do things that are real here. If someone says they gave you "
+                     "something that isn't in your things, say honestly you didn't get it (gifts come with !jay give). "
+                     "Don't promise to fetch or find things that don't exist.")
+        return "\n".join(lines) + "\n"
+
     def remember_convo(self, st, who, said, reply):
         st["convo"] = (st["convo"] + [{"who": who, "said": clean(said, 300), "reply": clean(reply, 300)}])[-12:]
 
@@ -2328,6 +2358,7 @@ class Jay:
             text = self.say_back(st,
                              f"You're at {PLACES[st['place']]['name']}. Energy {st['energy']:.0f}/100, mood {mood_word(st['mood'])}.\n"
                              f"WHAT YOU'VE BEEN DOING:\n{mine}\n"
+                             + self.grounding(st)
                              + (f"WHAT YOU THINK OF BOLT: {st['about_bolt']}\n" if h["from"] == "bolt" else "")
                              + (f"WORDS YOU'VE PICKED UP: {', '.join(st['words'][-10:])}\n" if st["words"] else "")
                              + (f"THINGS YOU KNOW THAT CONNECT: {'; '.join(self.relevant_notes(st, text=h['text'], n=3))}\n"
@@ -2681,7 +2712,8 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
             text = self.say_back(st,
                              f"You're {where}. Energy {st['energy']:.0f}/100, mood {mood_word(st['mood'])}.\n"
                              f"WHAT YOU'VE BEEN DOING:\n{mine}\n"
-                             f"BACKGROUND ON {who.upper()} (don't bring it up unless what they just said is about it): "
+                             + self.grounding(st)
+                             + f"BACKGROUND ON {who.upper()} (don't bring it up unless what they just said is about it): "
                              f"{'; '.join(person['facts']) or 'not much yet'}\n"
                              + (f"WHAT YOU THINK OF BOLT: {st['about_bolt']}\n" if bolt else "")
                              + (f"WORDS YOU'VE PICKED UP: {', '.join(st['words'][-10:])}\n" if st["words"] else "")
@@ -2751,6 +2783,7 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
             ate = bool(EDIBLE.search(thing)) or thing.lower() in ALL_FOODS
             if ate:                         # food gifts feed him; the gift itself stays in his hoard for good
                 st["energy"] = clamp(st["energy"] + 15, 0, 100)
+                st["inv"][f"{thing} from {who}"]["eaten"] = True
             st["human_at"] = now
             reaction = self.react_to_gift(st, thing, who, ate)
             self.remember(self._mem(st, self.clock.now().isoformat(timespec="seconds"), "gift",
