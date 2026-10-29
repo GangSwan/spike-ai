@@ -22,6 +22,8 @@
   "max_replies_per_hour": 20,
   "post_diary": "special",
 
+  "world_url": "",
+
   "daily_painting": true,
   "max_paintings_per_day": 6,
   "paint_width": 400,

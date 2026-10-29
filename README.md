@@ -105,6 +105,25 @@ Bolt has built-in protection for other creatures: he only hears bots listed in h
 Caelan adds Spike's bot username there. [BOLT_SIDE.md](BOLT_SIDE.md) explains how Spike fits Bolt's
 rules. Set `"bolt_accepts_bots": true` to let Spike give Bolt things (3 a day).
 
+## Living in shasta-world
+
+[shasta-world](https://github.com/GangSwan/shasta-world) is the town Spike and Bolt share: one
+server holds the places, who's where, things lying around and what they say to each other. It's
+off until you switch it on:
+
+1. Put `"world_url": "http://100.100.19.125:8642"` in `config.json` (underworld's Tailscale address).
+2. Set his world token (from `/etc/shasta-world/config.json` on underworld, the `spike` entry):
+   `setx JAY_WORLD_TOKEN "..."`, then open a new window.
+
+With it on, each tick he looks at the shared town first: who's there, what's lying around, and
+gifts that arrived for him (they land in his hoard as gifts). He can **talk** to whoever is there,
+**give** them things and **pick up** what's lying around. His moves, sleep, mimicked sounds and what
+he's doing ("foraging") show up for the others. He answers creatures who speak to him within ~20 s,
+not on his 5-minute tick. `!jay leave` puts the thing in the world for him. His Discord way of
+talking to Bolt switches off; his diary still goes to Discord. If the world is away he just lives in
+his own town, and anything he gave or picked up is sent when it's back. `client/world_client.py`
+from shasta-world, copied here as `world_client.py`, does the bookkeeping.
+
 ## Testing
 
 ```bash
@@ -122,6 +141,15 @@ python tests/loop_test.py 3
 This runs the real jay against a copy of Bolt's Discord behavior (from Caelan's repo). It checks
 that the two bots can't get stuck answering each other, and that nothing the jay's model writes
 can trigger one of Bolt's commands.
+
+```bash
+python tests/world_test.py
+```
+
+This runs the real jay in the real shasta-world server (it looks for a shasta-world checkout next to
+this repo, or set `SHASTA_WORLD`), with a scripted Bolt: talking both ways, gifts both ways, picking
+things up, `!jay leave`, the summit rule, sleep, the world going away, crashes before the ack, and a
+chaotic week where every gift must arrive exactly once.
 
 ## Moving to the home server
 

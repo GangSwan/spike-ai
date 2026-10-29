@@ -31,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 import painter
+from world_client import WorldClient
 
 BASE = Path(__file__).resolve().parent
 
@@ -62,6 +63,9 @@ DEFAULT_CONFIG = {
     "max_paintings_per_day": 6,         # cap on requests (!jay paint); the dusk one always happens
     "paint_width": 400,
     "paint_height": 300,
+    "world_url": "",                    # shasta-world, e.g. "http://100.100.19.125:8642". Empty = off: his own town only.
+    "world_creature": "spike",          # his id in the world; the token goes in the JAY_WORLD_TOKEN environment variable
+    "world_timeout": 5,
     "latitude": 41.31,
     "longitude": -122.31,
     # Bolt's own place ids (creature.py PLACES), so his !leave parser matches them exactly.
@@ -304,6 +308,11 @@ PLACES = {
                       sights=["sparks off a grinder", "a guy measuring something ten times", "brass curls in the light"]),
 }
 MOUNTAIN = {"mountain_trail", "summit"}
+WORLD_IDS = {"river_canyon": "creek"}          # his place ids -> shasta-world's (Bolt's); the rest are the same
+FROM_WORLD = {w: p for p, w in WORLD_IDS.items()}
+WORLD_DOING = {"forage": "foraging", "raid": "raiding the picnics", "snatch": "hunting for shiny things",
+               "watch": "watching everything", "nap": "napping", "cache": "hiding food", "recover": "digging up food",
+               "eat": "eating", "treasure": "admiring his shelf", "think": "sitting very still, thinking"}
 
 FOODS = {
     "fall": [("black oak acorn", 5), ("sugar pine nut", 4), ("manzanita berry", 3), ("beetle", 3)],
@@ -372,6 +381,14 @@ def match_place(text):
         if any(a in t for a in p["aliases"]):
             return pid
     return None
+
+
+def to_world(pid):
+    return WORLD_IDS.get(pid, pid)
+
+
+def from_world(wid):
+    return FROM_WORLD.get(wid, wid)
 
 
 def find_place_mention(text):
@@ -649,12 +666,14 @@ def new_state(now):
         "bolt_talk": [], "bolt_gifts": [], "bolt_streak": 0, "bolt_rest_until": 0.0, "replies": [], "paused": False,
         "discord_cursor": None, "nick_set": False, "gateway_ok": False, "last_reflect_tick": 0,
         "paint_queue": [], "art_notes": [], "next_painting_id": 1, "paint_days": {}, "last_daily_paint": None,
+        "world": {}, "world_view": None, "world_heard": [], "world_go_from": None,
     }
 
 
 class Jay:
-    def __init__(self, cfg, data_dir, brain, discord=None, weather=None, clock=None, rng=None, names=None):
+    def __init__(self, cfg, data_dir, brain, discord=None, weather=None, clock=None, rng=None, names=None, world=None):
         self.cfg = cfg
+        self.world = world             # a WorldClient when he lives in shasta-world, else None
         self.dir = Path(data_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.brain, self.discord, self.weather = brain, discord, weather
@@ -746,6 +765,9 @@ class Jay:
                 "snow": season == "winter" or (code in (71, 73, 75, 77, 85, 86))}
 
     def bolt_here(self, st):
+        if self.world:                 # the shared world knows for sure
+            wv = st.get("world_view")
+            return bool(wv) and any(h["id"] == "bolt" and h["state"] == "awake" for h in wv["here"])
         b = st["bolt"]
         if not b.get("place_t") or b.get("place") != st["place"]:
             return False
@@ -828,6 +850,8 @@ class Jay:
 
     def can_message_bolt(self, st):
         """One budget for everything aimed at Bolt: talking, replies, !give."""
+        if self.world:
+            return False               # in the shared world he talks to Bolt there, not through Discord
         now = self.clock.time()
         if now < st["bolt_rest_until"]:
             return False
@@ -878,6 +902,16 @@ class Jay:
                 if len(st["bolt_gifts"]) < self.cfg["max_gifts_to_bolt_per_day"]:
                     a["give_bolt"] = "give Bolt one of your things (item = thing)"
                 # no leave_for_bolt: Bolt won't take !leave from creatures, so the thing would just vanish
+        wv = st.get("world_view") if self.world else None
+        if wv:
+            awake = [h["name"] for h in wv["here"] if h["state"] == "awake"]
+            if awake:
+                a["talk"] = (f"say something out loud to {' and '.join(awake)}, right here "
+                             "(target = exactly what you say)")
+            if wv["here"] and self.inv_of(st, {"shiny", "food"}):
+                a["give"] = f"give one of your things to {' or '.join(h['name'] for h in wv['here'])} (item = thing, target = who)"
+            if self.world_items(st):
+                a["pick_up"] = "pick up something lying here (item = which thing)"
         return a
 
     # ---------- prompts
@@ -904,12 +938,18 @@ class Jay:
         sounds = ", ".join(f"{s} ({q:.0f}/10)" for s, q in st["sounds"].items()) or "none yet"
         skills = ", ".join(f"{s} {skill_level(x)}" for s, x in st["skills"].items())
         avoid = overused_words([m["text"] for m in self.memories[-40:]])
+        wv = st.get("world_view") if self.world else None
+        heard = [h for h in st.get("world_heard", []) if self.clock.time() - h["t"] < 1800][-4:]
         sections = [
             f"NOW: {v['tod']} in {v['season']}, {temp}{v['sky']}, wind {v['wind']:.0f} mph.",
             f"WHERE: {here['name']} - {here['desc']}.",
             f"ENERGY: {st['energy']:.0f}/100. MOOD: {mood_word(st['mood'])}.",
             "\n".join(f"NEW: {e}" for e in st["events"]),
             f"BOLT: {self.bolt_line(st)}",
+            f"THE TOWN RIGHT NOW (you share it with Bolt):\n{wv['summary']}" if wv else "",
+            ("YOU HEARD:\n" + "\n".join(f"- {h['name']}" + (" (to you)" if h["to"] == self.world.creature else "")
+                                         + f": \"{h['text']}\"" for h in heard)) if wv and heard else "",
+            f"LYING HERE: {', '.join(i['name'] for i in self.world_items(st))}" if wv and self.world_items(st) else "",
             f"WHAT I THINK OF BOLT: {st['about_bolt']}",
             f"MY THINGS: {self.inv_summary(st)}",
             f"MY SHELF: {', '.join(st['shelf']) or 'empty'}",
@@ -938,7 +978,14 @@ class Jay:
     # ---------- the tick
 
     def tick(self):
-        """One moment of life. Works on a copy; nothing changes unless the whole tick succeeds."""
+        """One moment of life. Works on a copy; nothing changes unless the whole tick succeeds.
+        In shasta-world, what he did goes to the world only after the tick is saved (PROTOCOL.md: save, then send)."""
+        what = self._tick()
+        if self.world:
+            self.world_settle()
+        return what
+
+    def _tick(self):
         st = copy.deepcopy(self.state)
         v = self.view(st)
         now_iso = v["now"].isoformat(timespec="seconds")
@@ -947,6 +994,9 @@ class Jay:
         if st["paused"]:
             return "paused"
 
+        if self.world:
+            self.world_look(st)
+
         if not v["is_day"]:
             if st["asleep"]:
                 st["energy"] = clamp(st["energy"] + 6, 0, 100)
@@ -954,7 +1004,10 @@ class Jay:
                 self._commit(st, [])
                 return "asleep"
             st["asleep"] = True
+            if st["place"] != "fir":
+                self.world_queue(st, "go", to="fir")
             st["place"] = "fir"
+            self.world_queue(st, "presence", awake=False)
             st["tick"] += 1
             if (self.cfg["daily_painting"] and st["last_daily_paint"] != self._today()
                     and not any(j["kind"] == "daily" for j in st["paint_queue"])):
@@ -965,6 +1018,7 @@ class Jay:
 
         if st["asleep"]:
             st["asleep"] = False
+            self.world_queue(st, "presence", awake=True)
             self._daily_forgetting(st, v)
 
         if not st["name"]:
@@ -989,6 +1043,8 @@ class Jay:
                 act = {"action": "watch", "target": "", "item": "", "why": "couldn't make up my mind"}
 
         outcome, special, cost = self.execute(st, act, v)
+        if act["action"] in WORLD_DOING:
+            self.world_queue(st, "doing", text=WORLD_DOING[act["action"]])
         st["energy"] = clamp(st["energy"] - cost - 1, 0, 100)
 
         try:
@@ -1129,9 +1185,14 @@ class Jay:
         if not dest or dest == st["place"]:
             return f"You hopped around but stayed at {here}.", False, 1
         p = PLACES[dest]
+        blocked = (st.get("world_view") or {}).get("cant_go", {}).get(to_world(dest)) if self.world else None
+        if blocked:
+            return f"You tried to fly to {p['name']}, but {blocked[0].lower()}{blocked[1:]}", False, 1
         cost = p["cost"] + (4 if v["snow"] and dest in MOUNTAIN else 0) + (2 if v["wind"] >= 25 else 0)
         if st["energy"] - cost < 5:
             return f"You wanted to fly to {p['name']} but you're too worn out.", False, 0
+        st["world_go_from"] = st["place"]
+        self.world_queue(st, "go", to=to_world(dest))
         st["place"] = dest
         text = f"You flew from {here} to {p['name']}: {p['desc']}."
         special = dest not in st["visited"]
@@ -1217,6 +1278,7 @@ class Jay:
             effect = SOUND_EFFECTS.get(s, "it echoed off everything")
             if s == "Bolt's caw" and self.bolt_here(st):
                 effect = "Bolt's head whipped around looking for the other crow"
+            self.world_queue(st, "sound", text=clean(f"a {grade} {s}", 60))
             return f"You practiced your {s} ({grade}, {q:.0f}/10) and {effect}." + self._xp(st, "mimic"), False, 2
         if s not in learnable:
             return f"You tried to do a {s} from memory, but you haven't heard it properly here.", False, 1
@@ -1224,12 +1286,14 @@ class Jay:
         if tries >= 3 or self.rng.random() < 0.35 + 0.06 * lvl:
             st["learning"].pop(s, None)
             known[s] = round(1 + 0.3 * lvl, 2)
+            self.world_queue(st, "sound", text=clean(f"a brand-new {s}", 60))
             return f"You listened hard and got your first real {s} out. It's yours now." + self._xp(st, "mimic", 2), True, 2
         st["learning"][s] = tries
         return f"You tried to copy the {s} but it came out as a squawk.", False, 2
 
     def _do_scold(self, st, act, v):
         here = PLACES[st["place"]]
+        self.world_queue(st, "sound", text="a furious jay alarm call")
         if self.bolt_here(st) and self.rng.random() < 0.5:
             return "You scolded Bolt from a branch for no particular reason. Loudly.", False, 2
         return f"You screamed your alarm call at {here['threat']} until you felt better.", False, 2
@@ -1324,6 +1388,36 @@ class Jay:
         st["outbox"].append({"text": f"!give bolt {item}", "t": self.clock.time()})
         return f"You gave Bolt your {item}.", True, 1
 
+    def _do_talk(self, st, act, v):
+        wv = st.get("world_view") or {"here": []}
+        awake = [h for h in wv["here"] if h["state"] == "awake"]
+        msg = no_command(clean(act["target"], 280))
+        if not msg or not awake:
+            return "You opened your beak, then didn't say anything.", False, 0
+        to = awake[0] if len(awake) == 1 else None
+        self.world_queue(st, "say", text=msg, **({"to": to["id"]} if to else {}))
+        return f"You said to {to['name'] if to else 'everyone here'}: \"{msg}\"", True, 0
+
+    def _do_give(self, st, act, v):
+        wv = st.get("world_view") or {"here": []}
+        target = clean(act["target"], 40).lower()
+        to = next((h for h in wv["here"] if h["name"].lower() in target or h["id"] in target), None) \
+            or (wv["here"][0] if wv["here"] else None)
+        item = pick({"target": act["item"] or act["target"]}, self.inv_of(st, {"shiny", "food"}))
+        if not to or not item or not self.inv_take(st, item):
+            return "You meant to give something away but fumbled it.", False, 0
+        self.world_queue(st, "give", to=to["id"], item=clean(item, 60))
+        return f"You gave {to['name']} your {item}.", True, 1
+
+    def _do_pick_up(self, st, act, v):
+        items = self.world_items(st)
+        name = match_item(act["item"] or act["target"], [i["name"] for i in items])
+        it = next((i for i in items if i["name"] == name), items[0] if items else None)
+        if not it:
+            return "You looked for something to pick up, but there's nothing here.", False, 0
+        self.world_queue(st, "take", item=it["id"])
+        return f"You went for the {it['name']} lying here.", False, 1
+
     def _do_leave_for_bolt(self, st, act, v):
         place = match_place(act["target"])
         item = match_item(act["item"], self.inv_of(st, {"shiny", "food"}))
@@ -1332,6 +1426,114 @@ class Jay:
         self.sent_to_bolt(st, talk=False)
         st["outbox"].append({"text": f"!leave {self.cfg['bolt_place_names'].get(place, place)} {item}", "t": self.clock.time()})
         return f"You hid your {item} at {PLACES[place]['name']} for Bolt to find.", True, 1
+
+    # ---------- shasta-world (only when world_url is set)
+
+    def world_items(self, st):
+        """Things lying where he is that he's allowed to take (not left for someone else)."""
+        wv = st.get("world_view") or {}
+        return [i for i in wv.get("items", []) if i["for"] in (None, self.world.creature)]
+
+    def world_queue(self, st, action, **fields):
+        if self.world:
+            self.world.queue(st["world"], action, **fields)
+
+    def world_look(self, st):
+        """Look at the shared town and put new deliveries in the hoard. Works on the tick's copy."""
+        seen = self.world.look(st["world"], to_world(st["place"]), not st["asleep"])
+        if not seen:
+            st["world_view"] = None     # the world is away: he lives in his own town
+            return
+        st["world_view"] = {"here": seen["here"], "items": seen["items"], "cant_go": seen["cant_go"],
+                            "summary": seen["summary"]}
+        for d in self.world.new_deliveries(st["world"], seen):
+            item = clean(d["item"], 60)
+            if d["how"].startswith("you picked it up"):
+                self.inv_add(st, item, "food" if item in ALL_FOODS else "shiny")
+                st["events"].append(f"You picked up the {item}.")
+            else:
+                frm = clean(d["from"], 32)
+                self.inv_add(st, f"{item} from {frm}", "gift", from_=frm)
+                st["events"].append(f"{d['how'][0].upper()}{d['how'][1:]}: {item}.")
+
+    def world_settle(self):
+        """After a saved tick (or a saved reply): send the outbox, apply the answers, save, then ack."""
+        st, ws = self.state, self.state["world"]
+        if (not ws.get("outbox") and not ws.get("got")) or self.world.needs_hello:
+            return                       # nothing to do, or the world is away (the next look says hello)
+        for body, reply in self.world.send(ws):
+            if reply.get("ok"):
+                continue
+            act, msg = body["action"], clean(reply.get("message"), 200)
+            if act in ("give", "drop"):
+                item = body["item"]
+                self.inv_add(st, item, "food" if item in ALL_FOODS else "shiny")
+                st["events"].append(f"You tried to give away your {item}, but: {msg} You still have it.")
+            elif act == "go" and st.get("world_go_from"):
+                st["place"] = st["world_go_from"]
+                st["events"].append(f"You couldn't get there: {msg}")
+            elif act == "take":
+                st["events"].append(f"You went for something lying around, but: {msg}")
+            elif act == "hide":           # the world wouldn't take it: keep it in his own town instead
+                st["hidden"].append({"place": from_world(body["place"]), "thing": body["item"], "from": body["by"]})
+        self.save()
+        self.world.ack(ws)
+
+    def world_poll(self):
+        """Every ~20 s between ticks: hear talk, answer creatures who speak to him, send what's pending."""
+        st = self.state
+        if self.world.needs_hello and not st["paused"]:
+            self.world_look(st)
+            self.save()
+        lines = self.world.heard(st["world"])
+        if lines:
+            for h in lines:
+                if h["from"] == "bolt":
+                    self.note_bolt(f"**Bolt:** {h['text']}")
+                st["world_heard"] = (st["world_heard"] + [{"name": h["name"], "from": h["from"], "to": h["to"],
+                                                           "text": clean(h["text"], 300), "t": self.clock.time()}])[-10:]
+            self.save()
+            me = (st["name"] or "").lower()
+            for h in reversed(lines):
+                if h["to"] == self.world.creature or (me and re.search(r"\b" + re.escape(me) + r"\b", h["text"].lower())):
+                    self.world_reply(h)
+                    break
+        self.world_settle()
+
+    def world_reply(self, h):
+        """Answer a creature right away, the way he answers people on Discord."""
+        st = self.state
+        if st["asleep"] or st["paused"]:
+            return
+        now = self.clock.time()
+        st["replies"] = [t for t in st["replies"] if now - t < 3600]
+        if len(st["replies"]) >= self.cfg["max_replies_per_hour"]:
+            return
+        who = h["name"]
+        talk = "\n".join(f"{x['name']}: {x['text']}" for x in st["world_heard"][-6:])
+        mine = "\n".join(f"- {x['text']}" for x in self.memories[-3:])
+        try:
+            obj = self.think(self.system_prompt(st),
+                             f"You're at {PLACES[st['place']]['name']}. Energy {st['energy']:.0f}/100, mood {mood_word(st['mood'])}.\n"
+                             f"WHAT YOU'VE BEEN DOING:\n{mine}\n"
+                             + (f"WHAT YOU THINK OF BOLT: {st['about_bolt']}\n" if h["from"] == "bolt" else "")
+                             + f"TALK HERE:\n{talk}\n\n{who} is right here and just said to you: \"{clean(h['text'], 300)}\"\n"
+                             "Answer out loud as yourself, 1-2 short sentences. "
+                             'Reply JSON: {"reply": "..."}', 600)
+        except (BrainError, BudgetExceeded):
+            return
+        text = no_command(clean(obj.get("reply"), 280))
+        if not text:
+            return
+        st["replies"].append(now)
+        self.world_queue(st, "say", text=text, to=h["from"])
+        self.remember(self._mem(st, self.clock.now().isoformat(timespec="seconds"), "talk",
+                                f"{who} said \"{clean(h['text'], 200)}\" and I said \"{text}\"", 1, h["from"] == "bolt"))
+        if self.cfg["post_diary"] != "none":     # narration for the humans: a leading timestamp, so no bot takes it as talk
+            st["outbox"].append({"text": f"{stamp(self.clock.now())} *at {PLACES[st['place']]['name']}* "
+                                         f"{no_md(who)}: \"{no_md(clean(h['text'], 200))}\" / {st['name']}: \"{no_md(text)}\"",
+                                 "t": now})
+        self.save()
 
     # ---------- painting
 
@@ -1677,6 +1879,7 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
             self.sent_to_bolt(st, talk=True)
         else:
             st["replies"].append(now)
+            self.world_queue(st, "human_spoke", by=clean(who, 32))
         said = no_md(content)
         if bolt:   # quote just what Bolt said, not his whole post
             lines = re.findall(r"^\*\*Bolt:\*\*\s*(.+)$", content, re.M)
@@ -1710,6 +1913,7 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
         arg = parts[2] if len(parts) > 2 else ""
         owner = str((m.get("author") or {}).get("id")) == str(self.cfg["owner_discord_id"]) and self.cfg["owner_discord_id"]
         name = st["name"] or "the jay"
+        self.world_queue(st, "human_spoke", by=clean(who, 32))
         if cmd == "give" and clean(arg, 60):
             thing = clean(arg, 60)
             self.inv_add(st, f"{thing} from {who}", "gift", from_=who)
@@ -1720,7 +1924,12 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
         elif cmd == "leave":
             bits = arg.split(None, 1)
             place = match_place(bits[0]) if bits else None
-            if len(bits) == 2 and place and place != "fir":
+            if len(bits) == 2 and place and place != "fir" and self.world:
+                self.world_queue(st, "hide", place=to_world(place), item=clean(bits[1], 60), by=clean(who, 32),
+                                 for_=self.world.creature)
+                st["outbox"].append({"text": f"(left at {PLACES[place]['name']}. {name} will find it if he goes there)",
+                                     "t": self.clock.time(), "reply_to": m["id"]})
+            elif len(bits) == 2 and place and place != "fir":
                 st["hidden"].append({"place": place, "thing": clean(bits[1], 60), "from": who})
                 st["outbox"].append({"text": f"(hidden at {PLACES[place]['name']}. {name} will find it if he goes there)",
                                      "t": self.clock.time(), "reply_to": m["id"]})
@@ -1754,7 +1963,9 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
         sk = ", ".join(f"{s} {skill_level(x)}" for s, x in st["skills"].items())
         return (f"{st['name'] or 'unnamed jay'} | {'asleep' if st['asleep'] else 'awake'} at {PLACES[st['place']]['name']} | "
                 f"energy {st['energy']:.0f} | mood {mood_word(st['mood'])} | tick {st['tick']} | {sk} | "
-                f"{len(st['caches'])} caches | spent today ${self.spent_today():.3f} of ${self.cfg['daily_budget_usd']:.2f}")
+                f"{len(st['caches'])} caches | "
+                + (f"world {'on' if self.world.online else 'away'} | " if self.world else "")
+                + f"spent today ${self.spent_today():.3f} of ${self.cfg['daily_budget_usd']:.2f}")
 
     def flush_outbox(self):
         st = self.state
@@ -1803,7 +2014,7 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
             return False
 
     def run(self):
-        next_tick = next_poll = 0.0
+        next_tick = next_poll = next_world = 0.0
         fails = 0
         while True:
             now = self.clock.time()
@@ -1813,6 +2024,12 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
                 except Exception as e:
                     log(f"discord poll failed: {e}")
                 next_poll = now + self.cfg["discord_poll_seconds"]
+            if self.world and now >= next_world:
+                try:
+                    self.world_poll()
+                except Exception as e:
+                    log(f"world poll failed: {e}")
+                next_world = now + self.cfg["discord_poll_seconds"]
             try:
                 self.flush_outbox()
             except Exception as e:
@@ -1856,7 +2073,14 @@ def main():
     if not discord:
         log("Discord is off (no JAY_DISCORD_TOKEN or discord_channel_id). He'll live quietly; see data/diary.md.")
     names = load_json(BASE / "names.json", {})
-    jay = Jay(cfg, data, OpenAIBrain(cfg, key), discord, Weather(cfg["latitude"], cfg["longitude"]), names=names)
+    world, world_token = None, os.environ.get("JAY_WORLD_TOKEN")
+    if cfg["world_url"] and world_token:
+        world = WorldClient(cfg["world_url"], world_token, cfg["world_creature"], timeout=cfg["world_timeout"], log=log)
+        log(f"living in shasta-world at {cfg['world_url']}")
+    elif cfg["world_url"]:
+        log("world_url is set but JAY_WORLD_TOKEN isn't; living in his own town")
+    jay = Jay(cfg, data, OpenAIBrain(cfg, key), discord, Weather(cfg["latitude"], cfg["longitude"]), names=names,
+              world=world)
     log(f"waking up {jay.state['name'] or 'a nameless jay'} (tick {jay.state['tick']}, model {cfg['model']}, "
         f"budget ${cfg['daily_budget_usd']:.2f}/day)")
     if "--paint" in sys.argv:         # paint one picture right now: python jay.py --paint "the lake in a storm"
