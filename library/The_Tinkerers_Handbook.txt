@@ -1,0 +1,112 @@
+THE TINKERER'S HANDBOOK
+How to turn junk into things that work
+
+----------------------------------------------------------------------
+
+WHAT TINKERING IS
+
+Tinkering is building with what you have instead of what you wish you had. A tinkerer looks at a bent spring, a bottle cap, and a bit of wire and sees a trap, a whistle, or a wind chime. Every great machine started as somebody fiddling with parts to see what they could do.
+
+The first rule of tinkering: start with a purpose. "What do I want this thing to DO?" is the most important question. Combining two random things makes clutter. Combining two things because they solve a problem together makes an invention.
+
+The second rule: failure is part of the work. Things fall apart. Parts don't fit. Every failure teaches you something about how parts behave. The best tinkerers are just the ones who tried the most times.
+
+----------------------------------------------------------------------
+
+PART ONE: THE SIX SIMPLE MACHINES
+
+Almost every machine, from a can opener to a crane, is built from six simple machines. They're tricks that let a small push do big work.
+
+THE LEVER: a stiff bar that pivots on a point called the fulcrum. Push down on one end and the other end lifts. The farther your push is from the fulcrum, the more force you get. A crowbar, a seesaw, a pair of pliers, and a bottle opener are all levers. A crow's beak is one too.
+
+THE WHEEL AND AXLE: a wheel fixed to a rod so they turn together. Turning the big wheel a little turns the axle with a lot of force; turning the axle fast spins the wheel fast. Doorknobs, steering wheels, and the wheels on a cart.
+
+THE PULLEY: a wheel with a groove that a rope runs over. One pulley lets you pull down to lift something up. Several pulleys working together let you lift heavy things with less force, trading force for rope length.
+
+THE INCLINED PLANE: a ramp. Pushing something up a long, gentle ramp is easier than lifting it straight up, even though it travels farther.
+
+THE WEDGE: two ramps back to back, like the tip of an axe or a doorstop. A wedge turns a push into a split, or it holds things tight in place.
+
+THE SCREW: a ramp wrapped around a post. Turning a screw drives it forward with great force. Screws and bolts hold things together, and the threads keep them from shaking loose. A lug nut is a screw's partner.
+
+When you look at a part, ask which simple machine it could become. A spring can store a push and release it. A key is a lever. A coupling pin is an axle.
+
+----------------------------------------------------------------------
+
+PART TWO: KNOWING YOUR MATERIALS
+
+Different stuff behaves differently. Pick the right material for the job.
+
+METAL (lug nuts, springs, spikes, washers, keys): strong, heavy, conducts heat, rings when struck. Springs are metal that has been shaped to bend and bounce back. Iron and steel rust when wet. Brass and copper don't rust the same way, but turn green or brown over time.
+
+WOOD (sticks, twigs, bark): light, easy to shape, floats. Good for frames and handles. Splits along the grain.
+
+STONE (agate, jasper, pumice, obsidian): hard, heavy, doesn't bend. Good for weights, anchors, and pretty things. Pumice floats. Obsidian is sharp; use it carefully.
+
+GLASS (shards, beads, lenses): catches and bends light. A clear curved piece of glass can focus sunlight into a bright spot.
+
+RUBBER (tire bits, bands): stretchy, grippy, bouncy, waterproof. Good for grips, seals, and springs.
+
+STRING, WIRE, AND LINE (fishing line, wire curls, thread): ties things together. Wire holds a shape when you bend it. Fishing line is nearly invisible and very strong for its thickness.
+
+----------------------------------------------------------------------
+
+PART THREE: WAYS TO JOIN THINGS
+
+Building is mostly joining. Ways to make two parts into one thing:
+
+TIE IT: wrap string, line, or wire around both parts and knot it. Simple, strong, and you can undo it later.
+
+TWIST IT: twist wire around itself to clamp parts together.
+
+WEDGE IT: jam one part into a slot or crack in the other so it can't move.
+
+THREAD IT: screw a nut onto a bolt, or poke a pin through a hole.
+
+HOOK IT: bend a hook into wire so it can hang from something.
+
+BALANCE IT: some things don't need joining at all; they just need to sit in the right place. A mobile hangs from strings, perfectly balanced.
+
+WELD IT: humans melt metal together with hot sparks. A crow can't weld, but you can watch how they do it in the shed.
+
+A good joint is tight, simple, and holds when shaken. Test it: if it falls apart when you wiggle it, it would have fallen apart later anyway.
+
+----------------------------------------------------------------------
+
+PART FOUR: THINGS A TINKERER CAN BUILD
+
+WIND CHIME: hang several pieces of metal or glass from a stick so they bump each other in the breeze. Different sizes ring at different pitches, which is a little like music.
+
+LURE: something shiny that wobbles or spins when pulled through water, like a spoon-shaped bit of metal with a hook. Fish chase what flashes and moves.
+
+ALARM: a string across a path tied to something that clatters or rings when bumped. Good for guarding a nest or a hoard.
+
+SPINNER: something light and shiny mounted on a pin so the wind turns it. It flashes in the sun.
+
+SUNDIAL: a stick standing straight up in the ground. Its shadow moves around it as the sun crosses the sky, so you can tell the time.
+
+WATER CLOCK: a container with a tiny hole that drips at a steady pace. When it's empty, a certain amount of time has passed.
+
+LENS FIRE-STARTER (dangerous, for humans): a curved clear glass can focus sunlight hot enough to light dry grass. This is how magnifying glasses can start fires, which is why you never leave one in the sun near anything dry.
+
+SLING OR CATAPULT: a lever or a spring that stores energy and then flings something. It's a simple machine doing exactly what it was made for.
+
+----------------------------------------------------------------------
+
+PART FIVE: A TINKERER'S HABITS
+
+Ask what it's for before you build.
+
+Look at every piece of junk and ask what simple machine it could be.
+
+Build the simplest version first. Make it work, then make it better.
+
+Test everything. Shake it, pull it, drop it in water.
+
+When something falls apart, figure out where it broke. That's the part to fix.
+
+Keep your failures. Today's broken contraption is tomorrow's spare parts.
+
+Name your inventions. A thing with a name is a thing you're proud of.
+
+THE END

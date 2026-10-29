@@ -1,0 +1,158 @@
+METAL AND SPARKS: A FABRICATION SHOP MANUAL
+How raw metal becomes brackets, frames, cages, and anything else you can dream up
+
+----------------------------------------------------------------------
+
+WHAT FABRICATION IS
+
+Tinkering is building with whatever parts you find. Fabrication is building the parts themselves. A fabricator starts with plain stock, bars and tubes and sheets of metal, and cuts, bends, drills, and welds it into something that never existed before: a bracket to hold a part where it needs to be, a frame for a trailer, a roll cage for a race car, a gate, a rack, a stand.
+
+Every fabrication job goes the same way: measure, mark, cut, shape, fit, join, finish. Skip a step and the job will tell you about it later.
+
+The fabricator's first rule: measure twice, cut once. Metal you cut too short doesn't grow back.
+
+----------------------------------------------------------------------
+
+PART ONE: SAFETY COMES FIRST, EVERY TIME
+
+A fabrication shop is full of things that spin fast, get hot, and throw sparks. The people who last a long time in the trade are the ones who respect that.
+
+EYES: Grinding and cutting throw tiny bits of hot metal. Safety glasses go on before the tool turns on, and a face shield goes over them for heavy grinding.
+
+WELDING LIGHT: A welding arc is brighter than the sun up close. It gives off invisible ultraviolet light that burns the eyes even in a quick glance, a painful injury called arc eye or flash burn that feels like sand in your eyes hours later. Never look at an arc without a welding helmet, and the light burns skin like a sunburn, so welders cover up.
+
+SPARKS AND FIRE: Grinding sparks are tiny pieces of red-hot metal. They fly a long way, land in sawdust, rags, cardboard, or dry grass, and smolder there. Many shop fires start this way, sometimes hours after the work is done. Clear anything that can burn away from where sparks will land, keep a fire extinguisher close, and check the area before you leave.
+
+HANDS: Fresh-cut metal edges are sharp as knives, and metal that was just welded or ground can be too hot to touch while looking completely normal. Gloves for handling, and assume any metal near the work is hot.
+
+FUMES: Welding makes smoke. Work where air moves. Never weld or grind galvanized metal (steel with a dull gray zinc coating) without removing the coating first: zinc fumes make people sick with chills and fever.
+
+EARS: Grinders and cutting are loud enough to damage hearing over time. Ear protection matters.
+
+----------------------------------------------------------------------
+
+PART TWO: KNOWING YOUR METAL
+
+MILD STEEL: the most common fabrication metal. Strong, cheap, easy to cut, bend, and weld. Its weakness is rust: bare steel left out in the rain turns orange and flaky. Paint or primer keeps it safe.
+
+STAINLESS STEEL: steel mixed with chromium so it resists rust. Harder to cut and drill, and it gets hot quickly. Used where things stay wet or need to stay clean.
+
+ALUMINUM: light, soft, and silvery. It doesn't rust like steel, but it forms a thin dull gray skin on its surface. It carries heat away so fast that it's tricky to weld, and it clogs grinding discs. Used where weight matters.
+
+THE SHAPES METAL COMES IN:
+Flat bar: a long flat strip. Good for brackets and straps.
+Angle: a strip bent into an L. Stiff in two directions, great for frames and shelves.
+Channel: a U shape. Even stiffer.
+Square and round tube: hollow, light, and very strong for their weight. Frames, racks, and roll cages are built from tube.
+Sheet: thin flat metal for panels and covers. Sheet thickness is often given as a gauge number, and the bigger the gauge number, the THINNER the sheet.
+
+----------------------------------------------------------------------
+
+PART THREE: MEASURING AND MARKING
+
+A tape measure for long things, a steel rule for short ones, and a square to make sure a line is at a perfect right angle to an edge.
+
+Mark steel with a soapstone (a soft white stone crayon that shows up on dark metal) or a scribe (a sharp steel point that scratches a fine line). Before drilling, tap a small dent with a center punch right where the hole should go, so the drill bit doesn't wander.
+
+Mark which side of the line to cut on. The cut itself eats a little metal, so cutting on the wrong side makes the piece short.
+
+----------------------------------------------------------------------
+
+PART FOUR: CUTTING
+
+ANGLE GRINDER: a handheld tool with a disc spinning very fast. It's the fabricator's most-used tool, and it changes jobs by changing discs:
+- Cut-off wheel: a thin disc for slicing through metal. Cut only with its edge. Thin cutting wheels can shatter if pushed sideways, so never use one to grind with its face.
+- Grinding wheel: a thick disc for heavy material removal and smoothing welds.
+- Flap disc: overlapping sandpaper flaps for smoothing and blending. Leaves a cleaner finish than a grinding wheel.
+- Wire wheel: a brush of steel wires for stripping rust and paint.
+
+Grinder rules: keep the guard on, hold it with both hands, let it come to full speed before it touches the work, stand so the disc isn't spinning toward you, and only use discs rated for the grinder's speed. Clamp the work down. A grinder can grab and kick, and the work should never be held in one hand while you grind with the other.
+
+HACKSAW: slow, quiet, no sparks. Teeth point forward and it cuts on the push stroke.
+
+CHOP SAW AND BAND SAW: for cutting lots of bar and tube straight and square.
+
+PLASMA CUTTER: uses electricity and compressed air to blow a jet of super-hot gas through metal. Fast and clean on sheet and plate.
+
+----------------------------------------------------------------------
+
+PART FIVE: DRILLING, FILING, AND DEBURRING
+
+Center punch first, then drill. Start with a small bit (a pilot hole) and step up for bigger holes. Big bits and hard metal need slower drill speed, not faster. A few drops of cutting oil keep the bit cool and sharp. If the bit smokes or squeals, slow down. Clamp the work so a catching bit can't spin it.
+
+Files shape and smooth metal by hand. A file cuts on the push stroke only; lift it on the way back.
+
+Every cut and hole leaves a burr, a sharp ragged lip of metal. Deburr everything with a file or a flap disc. Parts fit better, and nobody gets cut.
+
+----------------------------------------------------------------------
+
+PART SIX: BENDING AND SHAPING
+
+Metal can be bent in a vise with a hammer, in a press brake (a machine that folds sheet in a straight line), or in a tube bender. Metal springs back a little after bending, so you bend slightly past the angle you want.
+
+Bend too tight and the outside of the bend cracks or a tube kinks flat. Thicker and harder metal needs a bigger bend radius.
+
+Heat makes steel easier to bend: glowing red-hot steel bends like stiff clay. That's what blacksmiths do.
+
+When one tube meets another tube from the side, its end has to be cut into a curved saddle shape so it sits tight against the round surface. This is called notching or fishmouthing, and it's how roll cages are built.
+
+----------------------------------------------------------------------
+
+PART SEVEN: JOINING METAL
+
+BOLTING: holes and bolts. Strong, simple, and can come apart again. A washer spreads the load, and a lock nut or lock washer keeps vibration from shaking it loose.
+
+WELDING: melting two pieces of metal together at the joint so they become one piece. Three main kinds:
+- MIG welding: a welding gun feeds a thin wire that melts into the joint, while a gas (or a flux inside the wire) shields the hot metal from air. Fast and the easiest to learn.
+- TIG welding: a pointed tungsten rod makes the arc and the welder dips a separate filler rod into the puddle by hand. Slow and precise, and it makes the prettiest welds. Good for aluminum and stainless.
+- Stick welding: a rod coated in flux is the electrode and the filler at the same time. Works outdoors in wind and on dirty metal, which is why farm and field repairs are often stick welded.
+
+A good weld needs CLEAN metal. Grind away rust, paint, and mill scale (the dark flaky skin on new steel) until the metal shines. Welding on dirty metal makes weak, bubbly welds.
+
+FIT-UP: before welding, the pieces have to sit exactly where they belong, clamped tight. A weld can't fix a bad fit.
+
+TACK WELDS: small spot welds that hold the pieces in place. Tack everything, check that it's square, and only then weld it out.
+
+HEAT DISTORTION: welding heat makes metal grow, and cooling makes it shrink, which pulls parts out of shape. Fabricators fight this by tacking first, welding in short sections, and jumping from side to side so the pull evens out.
+
+----------------------------------------------------------------------
+
+PART EIGHT: MAKING THINGS STRONG
+
+Triangles are the strongest shape. A square frame can fold flat like a pushed-over box, but a triangle can't change shape without bending a side. Add a diagonal brace to a square and it becomes two triangles.
+
+A gusset is a small triangle of plate welded into a corner to stiffen it.
+
+Tube is strong for its weight because metal far from the center does most of the work resisting bending. That's why a hollow tube can be almost as stiff as a solid bar of the same size at a fraction of the weight.
+
+Strength isn't the same as more metal. Heavier parts are harder to move, use more material, and aren't always stronger. A good fabricator puts metal where the load is.
+
+----------------------------------------------------------------------
+
+PART NINE: FINISHING
+
+Grind welds smooth if the part needs to look clean or fit against something. Knock off sharp edges. Wipe off oil and dust.
+
+Bare steel should be primed and painted, or powder coated (a dry paint powder baked on in an oven, very tough), or it will rust.
+
+----------------------------------------------------------------------
+
+A FABRICATOR'S HABITS
+
+Plan the job before you cut anything. Draw it out.
+
+Measure twice. Cut once.
+
+Clean metal makes good welds.
+
+Tack, check, then weld.
+
+Clamp everything. Hands are not clamps.
+
+Clean up the sparks' landing zone before you start and check it before you leave.
+
+Keep your scraps. Today's offcut is tomorrow's bracket.
+
+Every great machine shop started with somebody who had a grinder, a welder, and an idea.
+
+THE END
