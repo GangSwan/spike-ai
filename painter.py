@@ -21,6 +21,14 @@ TIMES = ["dawn", "day", "dusk", "night"]
 WEATHERS = ["clear", "cloudy", "rain", "snow", "storm", "fog"]
 FOCALS = ["mountain", "bird", "tree", "building", "sun", "water", "tracks", "none"]
 BIRDS = ["none", "bolt", "me"]
+WHO = ["bolt", "me", "other"]
+DOINGS = ["perched", "flying", "synth", "fishing", "tinkering", "reading", "painting", "eating", "singing", "sleeping"]
+DOING_WORDS = [   # what a creature's "doing" text means for the painter (Bolt's and Spike's own words)
+    ("synth", r"synth|patch|modular|rack"), ("singing", r"song|sing|music|whistl|talk|mimic|call|scold"),
+    ("fishing", r"fish"), ("tinkering", r"tinker|build|apart|weld|fix|sift|dig"),
+    ("reading", r"read|look(ing)? (something )?up|book|stud"), ("painting", r"paint|draw|sketch"),
+    ("eating", r"eat|forag|scaveng|raid|peck|cach|hid"), ("sleeping", r"nap|sleep|rest|roost"),
+    ("flying", r"fly|flew|flight")]
 MOODS = ["calm", "wild", "gloomy", "bright", "lonely", "proud"]
 DIALS = {"contrast": 0.5, "detail": 0.5, "sharpness": 0.5, "brush": 0.5, "horizon": 0.55, "focal_x": 0.5, "warmth": 0.0}
 
@@ -98,7 +106,31 @@ def normalize_plan(raw, place, time_of_day, weather):
     for k in DIALS:
         plan[k] = num(k, -1.0, 1.0) if k == "warmth" else num(k)
     plan["horizon"] = max(0.25, min(0.8, plan["horizon"]))
+    figures = []
+    for f in (raw.get("figures") if isinstance(raw.get("figures"), list) else [])[:3]:
+        if isinstance(f, dict):
+            who = str(f.get("who", "")).strip().lower()
+            who = who if who in WHO else "bolt" if "bolt" in who or "crow" in who else "me" if who in ("spike", "jay", "myself") else "other"
+            figures.append({"who": who, "doing": doing_of(f.get("doing"))})
+    if not figures and plan["bird"] != "none":
+        figures = [{"who": plan["bird"], "doing": "perched"}]
+    plan["figures"] = figures
+    plan["things"] = [re.sub(r"\s+", " ", str(t)).strip()[:40] for t in
+                      (raw.get("things") if isinstance(raw.get("things"), list) else [])[:4] if str(t).strip()]
+    if figures and plan["bird"] == "none":
+        plan["bird"] = figures[0]["who"] if figures[0]["who"] in BIRDS else "none"
     return plan
+
+
+def doing_of(text):
+    """Any way of saying what someone's doing, as one of DOINGS."""
+    t = str(text or "").strip().lower()
+    if t in DOINGS:
+        return t
+    for doing, pattern in DOING_WORDS:
+        if re.search(pattern, t):
+            return doing
+    return "perched"
 
 
 class Scene:
@@ -107,6 +139,7 @@ class Scene:
     def __init__(self, w, h):
         self.w, self.h = w, h
         self.px = [(0.0, 0.0, 0.0)] * (w * h)
+        self.focus = []        # boxes that get a finishing pass with a small brush (figures and what they're doing)
 
     def get(self, x, y):
         x = 0 if x < 0 else self.w - 1 if x >= self.w else int(x)
@@ -322,20 +355,125 @@ def build_scene(plan, skill, rng, w, h):
             for _ in range(5):
                 sc.ellipse(rng.uniform(0, w), h * rng.uniform(0.72, 0.95), w * 0.05, h * 0.015, (0.92, 0.93, 0.97))
 
-    if plan["bird"] != "none":
-        focal = plan["focal"] == "bird"
-        bx = fx if focal else w * 0.72
-        by = hy - h * 0.08 if focal else h * 0.3
-        size = w * (0.09 if focal else 0.04)
-        body = (0.05, 0.05, 0.07) if plan["bird"] == "bolt" else JAY_BLUE
-        head = (0.05, 0.05, 0.07) if plan["bird"] == "bolt" else (0.06, 0.07, 0.12)
-        sc.ellipse(bx, by, size, size * 0.55, body)
-        sc.ellipse(bx + size * 0.8, by - size * 0.45, size * 0.38, size * 0.38, head)
-        sc.poly([(bx + size * 1.1, by - size * 0.5), (bx + size * 1.55, by - size * 0.38), (bx + size * 1.1, by - size * 0.3)], (0.15, 0.12, 0.1))
-        sc.poly([(bx - size * 0.8, by - size * 0.1), (bx - size * 1.6, by + size * 0.2), (bx - size * 0.7, by + size * 0.3)], body)
-        if plan["bird"] == "me":   # the crest
-            sc.poly([(bx + size * 0.55, by - size * 0.7), (bx + size * 0.4, by - size * 1.35), (bx + size * 0.95, by - size * 0.75)], head)
+    draw_things(sc, plan, rng, w, h, hy)
+    figures = plan.get("figures") or []
+    spots = {1: [0.5], 2: [0.33, 0.68], 3: [0.22, 0.5, 0.78]}.get(len(figures), [])
+    for i, f in enumerate(figures):
+        first = i == 0 and plan["focal"] == "bird"
+        bx = (fx if len(figures) == 1 and plan["focal"] == "bird" else spots[i] * w)
+        size = w * (0.12 if first or len(figures) == 1 else 0.085 if len(figures) == 2 else 0.07)
+        by = hy + (h - hy) * 0.45 if f["doing"] != "flying" else hy * rng.uniform(0.35, 0.6)
+        draw_figure(sc, f, bx, by, size, rng, pal, tod)
+        sc.focus.append((bx - size * 1.7, by - size * 1.8, bx + size * (3.4 if f["doing"] in ("synth", "fishing", "tinkering", "painting") else 2.2),
+                         by + size * 1.0))
     return sc
+
+
+def draw_figure(sc, f, bx, by, size, rng, pal, tod):
+    """One bird, big enough to read, with what it's doing around it."""
+    crow = f["who"] == "bolt"
+    body = (0.05, 0.05, 0.07) if crow else JAY_BLUE if f["who"] == "me" else (0.45, 0.42, 0.38)
+    head = (0.05, 0.05, 0.07) if crow else (0.06, 0.07, 0.12) if f["who"] == "me" else (0.35, 0.32, 0.3)
+    beak = (0.15, 0.12, 0.1)
+    doing = f["doing"]
+    down = doing == "eating"                     # head down, pecking
+    tucked = doing == "sleeping"
+    if doing == "flying":
+        sc.ellipse(bx, by, size, size * 0.4, body)
+        for side in (-1, 1):
+            sc.poly([(bx - size * 0.3, by), (bx + side * size * 0.2 - size * 0.5, by - size * 1.1), (bx + size * 0.4, by)], body)
+        sc.ellipse(bx + size * 0.95, by - size * 0.1, size * 0.3, size * 0.3, head)
+        sc.poly([(bx + size * 1.2, by - size * 0.15), (bx + size * 1.6, by - size * 0.05), (bx + size * 1.2, by + size * 0.05)], beak)
+        return
+    sc.ellipse(bx, by + size * 0.75, size * 0.9, size * 0.12, (0.05, 0.05, 0.06), 0.35)          # shadow
+    for lx in (-0.2, 0.2):                                                                       # legs
+        sc.rect(bx + size * lx - 1, by + size * 0.4, bx + size * lx + 1, by + size * 0.75, (0.25, 0.22, 0.2))
+    sc.ellipse(bx, by, size, size * 0.6, body)
+    sc.poly([(bx - size * 0.8, by - size * 0.1), (bx - size * 1.6, by + size * 0.25), (bx - size * 0.7, by + size * 0.35)], body)
+    hx, hy_ = (bx + size * 0.9, by + size * 0.15) if down else (bx + size * 0.55, by - size * 0.2) if tucked else (bx + size * 0.8, by - size * 0.5)
+    sc.ellipse(hx, hy_, size * 0.4, size * 0.4, head)
+    if f["who"] == "me" and not tucked:          # the crest
+        sc.poly([(hx - size * 0.25, hy_ - size * 0.25), (hx - size * 0.4, hy_ - size * 0.95), (hx + size * 0.15, hy_ - size * 0.3)], head)
+    if not tucked:
+        sc.ellipse(hx + size * 0.12, hy_ - size * 0.08, size * 0.07, size * 0.07, (0.95, 0.95, 0.95))   # eye
+    open_beak = doing == "singing"
+    if not tucked:
+        sc.poly([(hx + size * 0.3, hy_ - size * 0.08), (hx + size * 0.8, hy_ + (-size * 0.12 if open_beak else 0.02 * size)),
+                 (hx + size * 0.3, hy_ + size * 0.08)], beak)
+        if open_beak:
+            sc.poly([(hx + size * 0.3, hy_ + size * 0.08), (hx + size * 0.75, hy_ + size * 0.22), (hx + size * 0.3, hy_ + size * 0.16)], beak)
+    ink = (0.95, 0.92, 0.75) if tod == "night" else (0.1, 0.1, 0.12)
+    if doing in ("singing", "synth"):            # music notes rising
+        for k in range(3):
+            nx, ny = hx + size * (0.9 + k * 0.45), hy_ - size * (0.6 + k * 0.45)
+            sc.ellipse(nx, ny, size * 0.12, size * 0.09, ink)
+            sc.rect(nx + size * 0.09, ny - size * 0.45, nx + size * 0.13, ny, ink)
+    if doing == "synth":                         # the rack: a dark box, knobs, patch cables
+        x0, y0 = bx + size * 1.3, by - size * 0.55
+        sc.rect(x0, y0, x0 + size * 1.7, y0 + size * 1.2, (0.12, 0.12, 0.14))
+        sc.rect(x0, y0 + size * 1.2, x0 + size * 1.7, y0 + size * 1.3, (0.3, 0.3, 0.32))
+        for r in range(2):
+            for c in range(4):
+                sc.ellipse(x0 + size * (0.25 + c * 0.4), y0 + size * (0.3 + r * 0.45), size * 0.1, size * 0.1, (0.85, 0.85, 0.8))
+        for c, col in enumerate([(0.9, 0.2, 0.2), (0.95, 0.75, 0.1), (0.2, 0.6, 0.95)]):
+            cx0, cx1 = x0 + size * (0.2 + c * 0.45), x0 + size * (0.6 + c * 0.4)
+            for t in range(12):
+                tt = t / 11
+                sc.ellipse(cx0 + (cx1 - cx0) * tt, y0 + size * (0.75 + 0.45 * math.sin(tt * math.pi)), size * 0.05, size * 0.05, col)
+    elif doing == "fishing":                     # line from the beak down to a red bobber
+        tx, ty = hx + size * 2.2, by + size * 0.9
+        for t in range(16):
+            tt = t / 15
+            sc.ellipse(hx + size * 0.7 + (tx - hx - size * 0.7) * tt, hy_ + (ty - hy_) * tt * tt, 1.2, 1.2, (0.9, 0.9, 0.92))
+        sc.ellipse(tx, ty, size * 0.14, size * 0.14, (0.9, 0.15, 0.12))
+    elif doing == "tinkering":                   # parts on the ground and sparks
+        for k in range(4):
+            px_ = bx + size * (1.0 + k * 0.4)
+            sc.rect(px_, by + size * 0.45, px_ + size * 0.3, by + size * 0.65, rng.choice([(0.6, 0.6, 0.65), (0.75, 0.6, 0.25), (0.4, 0.4, 0.45)]))
+        for k in range(9):
+            a = rng.uniform(-2.6, -0.5)
+            r = size * rng.uniform(0.4, 0.9)
+            sc.ellipse(bx + size * 1.4 + r * math.cos(a), by + size * 0.3 + r * math.sin(a), 1.6, 1.6, (1.0, 0.85, 0.2))
+    elif doing == "reading":                     # an open book in front
+        x0, y0 = hx + size * 0.5, by + size * 0.15
+        sc.poly([(x0, y0), (x0 + size * 0.7, y0 - size * 0.15), (x0 + size * 0.7, y0 + size * 0.45), (x0, y0 + size * 0.55)], (0.95, 0.93, 0.85))
+        sc.poly([(x0 + size * 0.7, y0 - size * 0.15), (x0 + size * 1.4, y0), (x0 + size * 1.4, y0 + size * 0.55), (x0 + size * 0.7, y0 + size * 0.45)], (0.88, 0.86, 0.78))
+    elif doing == "painting":                    # an easel with a little painting on it
+        x0 = bx + size * 1.4
+        for lx in (0.0, 0.9):
+            sc.poly([(x0 + size * 0.45, by - size * 1.0), (x0 + size * lx, by + size * 0.75), (x0 + size * lx + size * 0.08, by + size * 0.75)], (0.45, 0.3, 0.16))
+        sc.rect(x0 + size * 0.05, by - size * 0.9, x0 + size * 0.85, by - size * 0.1, (0.97, 0.96, 0.92))
+        for k in range(3):
+            sc.ellipse(x0 + size * (0.25 + k * 0.25), by - size * 0.5, size * 0.12, size * 0.1, pal[k % len(pal)])
+    elif doing == "eating":                      # seeds where the beak is
+        for k in range(5):
+            sc.ellipse(hx + size * rng.uniform(0.4, 1.1), by + size * rng.uniform(0.5, 0.75), size * 0.05, size * 0.04, (0.55, 0.4, 0.2))
+    elif tucked:                                  # z's
+        for k in range(3):
+            zx, zy, zs = hx + size * (0.6 + k * 0.35), hy_ - size * (0.6 + k * 0.4), size * (0.16 + k * 0.05)
+            sc.rect(zx, zy, zx + zs, zy + 2, ink)
+            sc.poly([(zx + zs, zy + 2), (zx + zs, zy + 3), (zx + 1, zy + zs), (zx, zy + zs - 1)], ink)
+            sc.rect(zx, zy + zs - 1, zx + zs, zy + zs + 1, ink)
+
+
+def draw_things(sc, plan, rng, w, h, hy):
+    """Things lying around: shiny ones glint, food is small and brown, the rest is a lump of junk."""
+    for i, t in enumerate(plan.get("things") or []):
+        x = w * (0.12 + 0.76 * (i + 0.5) / max(1, len(plan["things"]))) + rng.uniform(-8, 8)
+        y = hy + (h - hy) * rng.uniform(0.7, 0.9)
+        low = t.lower()
+        if re.search(r"shin|brass|chrome|silver|gold|ring|coin|dime|penny|glass|bottle cap|foil|key|mirror|bearing|wire|lure", low):
+            sc.ellipse(x, y, w * 0.018, w * 0.012, (0.85, 0.72, 0.3))
+            for a in range(4):                  # the glint
+                ang = a * math.pi / 2
+                sc.poly([(x, y), (x + math.cos(ang) * w * 0.035, y + math.sin(ang) * w * 0.035), (x + math.cos(ang + 0.2) * w * 0.01, y + math.sin(ang + 0.2) * w * 0.01)],
+                        (1.0, 0.97, 0.75))
+        elif re.search(r"nut|acorn|seed|berr|worm|fry|bread|crust|peanut|beetle|food|crumb", low):
+            for k in range(3):
+                sc.ellipse(x + k * 5, y - (k % 2) * 3, w * 0.01, w * 0.008, (0.5, 0.33, 0.16))
+        else:
+            sc.poly([(x - w * 0.025, y), (x + w * 0.025, y), (x + w * 0.015, y - w * 0.025), (x - w * 0.02, y - w * 0.02)],
+                    rng.choice([(0.5, 0.5, 0.55), (0.55, 0.35, 0.2), (0.35, 0.4, 0.45)]))
 
 
 def paint(scene, plan, skill, rng):
@@ -402,6 +540,23 @@ def paint(scene, plan, skill, rng):
                 if u * u + v * v <= 1:
                     o = canvas[row + xx]
                     canvas[row + xx] = (o[0] + (r - o[0]) * alpha, o[1] + (g - o[1]) * alpha, o[2] + (b - o[2]) * alpha)
+
+    # finishing pass: small strokes over the figures, so what they're doing still reads
+    fine = max(1.5, 2.6 * scale * (1.25 - 0.5 * s))
+    for x0, y0, x1, y1 in scene.focus:
+        x0, y0, x1, y1 = max(0, x0), max(0, y0), min(w - 1, x1), min(h - 1, y1)
+        for _ in range(int(max(0, (x1 - x0) * (y1 - y0)) / (fine * fine) * (0.5 + 0.9 * s))):
+            x, y = rng.uniform(x0, x1), rng.uniform(y0, y1)
+            ix, iy = int(x), int(y)
+            r, g, b = scene.get(x, y)
+            r, g, b = mix((r + rng.gauss(0, err * 0.6), g + rng.gauss(0, err * 0.6), b + rng.gauss(0, err * 0.6)), MUD, muddy * 0.5)
+            r, g, b = (clamp01(0.5 + (r - 0.5) * k + warm), clamp01(0.5 + (g - 0.5) * k), clamp01(0.5 + (b - 0.5) * k - warm))
+            rad = int(fine) + 1
+            for yy in range(max(0, iy - rad), min(h, iy + rad + 1)):
+                for xx in range(max(0, ix - rad), min(w, ix + rad + 1)):
+                    if (xx - x) ** 2 + (yy - y) ** 2 <= fine * fine * 0.6:
+                        o = canvas[yy * w + xx]
+                        canvas[yy * w + xx] = (o[0] + (r - o[0]) * 0.85, o[1] + (g - o[1]) * 0.85, o[2] + (b - o[2]) * 0.85)
 
     hy = int(plan["horizon"] * h)
     if plan["weather"] == "rain" or plan["weather"] == "storm":

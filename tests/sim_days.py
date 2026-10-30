@@ -57,7 +57,7 @@ class ChaosBrain:
         self.calls = 0
         self.leaks = []         # critic calls that were told something about the painting
 
-    def ask(self, system, user, max_tokens=1200, image_b64=None):
+    def ask(self, system, user, max_tokens=1200, image_b64=None, **kw):
         self.calls += 1
         if image_b64 is not None and (user != J.Jay.CRITIC_PROMPT or system != J.Jay.CRITIC_SYSTEM):
             self.leaks.append(user[:80])
