@@ -13,12 +13,14 @@ Talk:  type in his window: plain text talks to him, !jay ... runs a command as h
 Test:  python tests/sim_days.py   days of chaos in seconds, checks nothing breaks
        python tests/habits_test.py   learning, tinkering, plain talk, ruts, calls, waking, restarts
        python tests/autonomy_test.py needs, the daily menu, boredom, goals, no parroting, a stubborn brain's day
+       python tests/town_test.py     who's around, who Bolt is, his past, Discord catch-up, plans and fixer-uppers
 
 `python jay.py` runs him under a tiny supervisor, so `!jay restart` (or a data/restart.flag file) can test the
 new code and restart him into it without anyone touching the window.
 """
 
 import base64
+import collections
 import copy
 import html
 import json
@@ -36,7 +38,7 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import painter
@@ -227,6 +229,36 @@ def failed(outcome):
     return any(w in outcome for w in FAIL_WORDS)
 
 
+DIDNT = re.compile(r"^You (wanted to|meant to|went looking|thought about|opened your beak, then didn't|hopped around but "
+                   r"stayed|looked for something to|tried to fly to|tried to set up|went to take something apart but)")
+
+
+def didnt_happen(outcome):
+    """He only wanted to, or went looking and it wasn't there: the thing itself never happened (Bolt's rule)."""
+    return bool(DIDNT.match(outcome))
+
+
+def a_an(thing):
+    return ("an " if thing[:1].lower() in "aeiou" else "a ") + thing
+
+
+def when_said(iso):
+    """'today at 11:41' or 'on Oct 28', from one of his timestamps."""
+    day, _, hm = str(iso).partition("T")
+    if day == datetime.now().date().isoformat():
+        return f"today at {hm[:5]}"
+    try:
+        return "on " + datetime.strptime(day, "%Y-%m-%d").strftime("%b %d").replace(" 0", " ")
+    except ValueError:
+        return str(iso)
+
+
+def stems(text):
+    """The words that carry meaning, roughly stemmed: 'caching', 'cached' and 'caches' all count as 'cach'."""
+    return {re.sub(r"(ing|ed|es|s)$", "", w) if len(w) > 5 else w
+            for w in re.findall(r"[a-z]{4,}", str(text).lower()) if w not in COMMON_WORDS}
+
+
 def item_key(name):
     """The thing itself: 'red bobber from Elliott' -> 'red bobber', 'pin whistle (made from a + b)' -> 'pin whistle'."""
     return re.sub(r" from [^()]+$", "", re.sub(r"\s*\(.*\)\s*$", "", name)).strip() or name
@@ -374,7 +406,8 @@ WORLD_DOING = {"forage": "foraging", "raid": "raiding the picnics", "snatch": "h
                "watch": "watching everything", "nap": "napping", "cache": "hiding food", "recover": "digging up food",
                "eat": "eating", "treasure": "admiring his shelf", "think": "sitting very still, thinking",
                "read": "reading", "look_up": "looking something up", "examine": "turning something over in his beak",
-               "tinker": "tinkering with junk", "take_apart": "taking something apart", "paint": "painting"}
+               "tinker": "tinkering with junk", "take_apart": "taking something apart", "paint": "painting",
+               "build": "building something"}
 
 FOODS = {
     "fall": [("black oak acorn", 5), ("sugar pine nut", 4), ("manzanita berry", 3), ("beetle", 3)],
@@ -399,6 +432,11 @@ SOUND_EFFECTS = {
     "tire squeal": "somebody turned to see who was drifting",
     "Bolt's caw": "a couple of crows answered from across town",
     "diner door bell": "the waitress looked at the door. nobody there",
+    "music box tune": "a mouse in the rafters stopped to listen",
+    "cuckoo clock": "the cook checked the clock on the wall, then his watch",
+    "wind-up bird whirr": "the junkyard dog tilted his head at you",
+    "bicycle bell": "a kid on the lot looked around for the bike",
+    "radio jingle": "it got stuck in your own head too",
 }
 SKILLS = ["forage", "snatch", "mimic", "recall", "raid", "paint", "tinker"]
 TOPICS = {   # notebook: (skill that studying it trains, places where it comes to mind, actions it helps with)
@@ -413,12 +451,94 @@ TOPICS = {   # notebook: (skill that studying it trains, places where it comes t
     "fire":     (None, ["mountain_trail", "shed", "machine_shop"], []),
 }
 TINKER_PLACES = {"shed", "garage", "machine_shop", "junkyard"}
+# Bigger builds, a long puzzle. Reading about one of these (the words below) gives him the idea; studying the plan
+# (examine) works out one thing at a time: each part and where it turns up, any smaller build it needs inside it, then
+# how it goes together. He only finds a part (snatching, at its place) once he knows he's looking for it, and he has
+# to understand each part (examine it) before it goes in. Built ones change his life (BUILT_DOES).
+PLANS = {   # key: (words that teach it, name, built at, [(part, where it turns up)], builds it needs, tinker level)
+    "spyglass": (r"spyglass|telescope|magnifying glass", "spyglass", "junkyard",
+                 [("magnifying lens", "ambulance_station"), ("cardboard tube", "diner_roof"),
+                  ("strip of black tape", "garage")], [], 2),
+    "vane":     (r"weather ?vanes?|wind ?vanes?", "weathervane", "fir",
+                 [("copper strip", "machine_shop"), ("long bent nail", "shed"), ("tin rooster cutout", "old_barn")], [], 2),
+    "horn":     (r"megaphones?|ear trumpets?|speaking tubes?", "echo horn", "rail_yard",
+                 [("brass funnel", "garage"), ("length of rubber hose", "ambulance_station"),
+                  ("hollow creek reed", "river_canyon")], [], 2),
+    "locker":   (r"granar(?:y|ies)|larders?|acorn woodpeckers?", "acorn locker", "fir",
+                 [("tin box with a hinged lid", "junkyard"), ("square of cork board", "diner_roof"),
+                  ("brass hinge pin", "machine_shop")], [], 3),
+    "zipline":  (r"zip ?lines?|pulleys?|aerial ropeways?", "zipline", "mountain_trail",
+                 [("spool of fishing line", "lake"), ("little pulley wheel", "machine_shop"),
+                  ("wooden clothespin", "old_barn")], [], 3),
+    "obscura":  (r"camera obscura|pinhole", "camera obscura", "fir",
+                 [("shoebox", "garage"), ("sheet of wax paper", "diner_roof")], ["spyglass"], 3),
+    "balloon":  (r"hot[- ]air balloons?|montgolfier", "jay-sized hot-air balloon", "old_barn",
+                 [("big clear trash bag", "junkyard"), ("tea-light tin", "lake"), ("woven berry basket", "old_barn")],
+                 ["vane", "zipline"], 4),
+}
+# Fixer-uppers: broken things he can come across while snatching, once he knows enough to see they could work again
+# (fixer_eye). Nothing tells him to fix them. Studying one finds one thing wrong per look; he fixes it where it sits,
+# or strips it for parts (take_apart).
+FIXERS = {  # key: (words, what it is, where it sits, [(what's wrong, the part that fixes it, where that turns up)], level)
+    "musicbox": ("music box", "broken music box", "old_barn",
+                 [("the comb's teeth are bent flat", "tiny steel comb", "machine_shop"),
+                  ("the spring slipped off its post", "watch spring", "junkyard")], 2),
+    "cuckoo":   ("cuckoo clock", "cuckoo clock that stopped", "diner_roof",
+                 [("the pendulum is gone", "brass pendulum", "rail_yard"),
+                  ("the little bellows are torn", "scrap of soft leather", "garage")], 2),
+    "tinbird":  ("wind-up bird", "rusty wind-up tin bird", "junkyard",
+                 [("its key is missing", "little wind-up key", "shed"),
+                  ("a gear inside is stripped", "tiny brass gear", "machine_shop")], 2),
+    "bell":     ("bicycle bell", "dented bicycle bell", "drift_lot",
+                 [("the striker spring snapped", "small coil spring", "garage")], 1),
+    "lantern":  ("trail lantern", "old trail lantern", "mountain_trail",
+                 [("the glass is cracked", "lantern chimney glass", "rail_yard"),
+                  ("the wick burnt down to nothing", "cotton wick", "ambulance_station")], 2),
+    "radio":    ("radio", "dead transistor radio", "shed",
+                 [("the battery clip is corroded", "battery clip", "garage"),
+                  ("the dial cord slipped off", "dial cord", "machine_shop")], 3),
+}
+JOBS = {k: {"words": w, "name": n, "at": at, "parts": parts, "needs": needs, "level": lvl, "fix": False}
+        for k, (w, n, at, parts, needs, lvl) in PLANS.items()}
+JOBS.update({k: {"words": w, "name": n, "at": at, "parts": [(p, wh) for _, p, wh in probs], "needs": [], "level": lvl,
+                 "fix": True, "wrong": {p: why for why, p, _ in probs}}
+             for k, (w, n, at, probs, lvl) in FIXERS.items()})
+BUILT_DOES = {   # what a finished one changes in his life
+    "spyglass": "you spot shiny things from across a place, so snatching goes a lot better",
+    "vane": "you read the wind off it every morning, so foraging goes better",
+    "horn": "it throws your voice, so your mimicking gets a lot better",
+    "locker": "food you cache at the fir is never forgotten",
+    "zipline": "you ride it between the mountain trail and the summit for almost no energy",
+    "obscura": "it throws the whole view onto the wax paper, so your painting gets better",
+    "balloon": "it carries you up to the summit from anywhere for very little energy",
+    "musicbox": "it plays its little tune in the old barn again, and you can learn the tune there",
+    "cuckoo": "it cuckoos on the hour up on the diner roof, and you can learn the call there",
+    "tinbird": "it hops and whirrs around the junkyard, and you can copy the whirr there",
+    "bell": "it rings again at the drift lot, and you can copy it there",
+    "lantern": "it glows on the mountain trail, so naps there restore a lot more",
+    "radio": "it plays in the shed again, and there's a jingle you can copy there",
+}
+MACHINE_BONUS = {"snatch": [("spyglass", 2)], "forage": [("vane", 1)], "mimic": [("horn", 2)], "paint": [("obscura", 1)]}
+FIX_SOUNDS = {"musicbox": "music box tune", "cuckoo": "cuckoo clock", "tinbird": "wind-up bird whirr",
+              "bell": "bicycle bell", "radio": "radio jingle"}
+MECHANICAL = re.compile(r"\b(springs?|gears?|clocks?|motors?|machines?|engines?|hinges?|pulleys?|cranks?|levers?|"
+                        r"bearings?|pistons?)\b", re.I)
+# Plain facts about the other creatures he knows, so "your friend" or "the crow" means something to him.
+FELLOWS = {"Bolt": {"is": "a young crow", "owner": "Caelan", "home": "nest", "him": "him"}}
+KIN = re.compile(r"\b(friends?|buddy|buddies|pals?|mates?|crows?|birds?|creatures?|neighbou?rs?|company|"
+                 r"the other (one|guy|bird)|who(?:'s| is| was) (here|there|around))\b", re.I)
+ASKS_PAST = re.compile(r"\b(past|ever|before|remember|used to|yesterday|last (time|week|night)|biggest|best|first|"
+                       r"favou?rite|stor(y|ies)|tell|you've|have you|did you|found|got)\b", re.I)
+ASKING_WORDS = {"past", "ever", "before", "remember", "used", "yesterday", "last", "time", "week", "night", "biggest",
+                "best", "first", "favorite", "favourite", "story", "stories", "tell", "think", "thought", "coolest",
+                "thing", "things", "stuff", "something", "anything", "everything", "kind"}
+CATCH_UP = 1800    # seconds: Discord messages older than this when he starts up are read, not acted on
 DRIVES = {   # a need: (the actions that satisfy it, how fast it builds up per turn, how it feels)
     "food":       ({"forage", "raid", "eat", "recover"}, 0.5, "hungry"),
     "rest":       ({"nap"}, 0.3, "tired"),
     "curiosity":  ({"read", "look_up", "examine", "watch", "reminisce"}, 0.6, "curious, like learning something"),
     "company":    ({"talk", "give", "talk_to_bolt", "give_bolt"}, 0.4, "like some company"),
-    "making":     ({"tinker", "paint", "take_apart"}, 0.5, "like making something"),
+    "making":     ({"tinker", "paint", "take_apart", "build"}, 0.5, "like making something"),
     "collecting": ({"snatch", "treasure", "pick_up"}, 0.4, "like hunting for treasure"),
     "stashing":   ({"cache"}, 0.4, "like hiding food for winter"),
     "voice":      ({"mimic", "scold"}, 0.3, "loud, like making some noise"),
@@ -433,7 +553,7 @@ FAIL_WORDS = ("came up empty", "chased you off", "couldn't", "came out as a squa
               "didn't have")
 BOOK_HINTS = {   # which books help with which actions (by words in the file name)
     "forage": ["jays", "animals"], "raid": ["jays"], "snatch": ["rocks", "gems"], "mimic": ["jays", "birds"],
-    "tinker": ["tinker", "metal", "engines"], "paint": ["painting"], "recover": ["jays"],
+    "tinker": ["tinker", "metal", "engines", "contraptions"], "paint": ["painting"], "recover": ["jays"],
 }
 COMMON_WORDS = set("""that this with your have what when where there their they them then than from into just like
 about would could should been were will some more very much make made does doing going want think know really here
@@ -821,6 +941,7 @@ def new_state(now):
         "book_days": {},
         "drives": {d: 0.0 for d in DRIVES}, "bench": {}, "place_since": 0, "last_at": {},
         "goals": {"date": None, "list": []},
+        "fellows": {}, "company": {}, "plans": {}, "built": {},
     }
 
 
@@ -848,6 +969,8 @@ class Jay:
         self.me_id = None
         self.channel_log = []          # recent channel lines, for reply context
         self.budget_warned = None
+        self.discord_started = None    # when this run first read Discord (for catching up after a restart)
+        self._past = (None, [], {})    # memory-book index for remember_past: (length, [(stems, memory)], word counts)
         self.state = load_json(self.state_path, None) or new_state(self.clock.now())
         for k, v in new_state(self.clock.now()).items():   # forward-compat for new fields
             self.state.setdefault(k, v)
@@ -987,7 +1110,8 @@ class Jay:
 
     def inv_summary(self, st):
         parts = []
-        for kind, label in (("food", "food"), ("shiny", "shiny things"), ("invention", "things I built"), ("gift", "gifts")):
+        for kind, label in (("food", "food"), ("shiny", "shiny things"), ("invention", "things I built"), ("gift", "gifts"),
+                            ("part", "parts for my plans")):
             names = [(f"{n} x{st['inv'][n]['count']}" if st['inv'][n]['count'] > 1 else n)
                      + (" (you ate it; it's a memory now, not food)" if st["inv"][n].get("eaten") else "")
                      for n in self.inv_of(st, {kind})]
@@ -1005,6 +1129,7 @@ class Jay:
 
     def learnable_sounds(self, st):
         s = [PLACES[st["place"]]["sound"]]
+        s += [FIX_SOUNDS[k] for k in FIX_SOUNDS if self.working(st, k) and JOBS[k]["at"] == st["place"]]
         if self.bolt_here(st):
             s.append("Bolt's caw")
             for f in reversed(st["bolt"]["feed"][-3:]):
@@ -1078,12 +1203,20 @@ class Jay:
             a["read"] = "read a bit of one of your books (target = book, optional)"
         if self.web:
             a["look_up"] = "look something up in the big book of everything (target = what you're curious about)"
-        if self.inv_of(st, {"shiny", "gift", "invention"}):
-            a["examine"] = "study one of your things up close to figure out something new about it (item = thing)"
+        if self.inv_of(st, {"shiny", "gift", "invention", "part"}) or self.my_plans(st):
+            a["examine"] = ("study one of your things up close to figure out something new about it (item = thing)"
+                            + ("; or study one of your plans, or a broken thing you know about, to work out more of it"
+                               if self.my_plans(st) else ""))
+        if self.my_plans(st):
+            a["build"] = "build one of your plans, or fix a broken thing you know about (target = which one)"
         if st["place"] in TINKER_PLACES and len(self.inv_of(st, {"shiny"})) >= 2:
             a["tinker"] = 'build something out of two of your shiny things (item = "thing one + thing two")'
         if self.inv_of(st, {"invention"}) and st["place"] in TINKER_PLACES | {"fir"}:
             a["take_apart"] = "take one of your inventions back apart (item = invention)"
+        broken = [JOBS[k]["name"] for k in self.my_plans(st) if JOBS[k]["fix"] and JOBS[k]["at"] == st["place"]]
+        if broken:
+            a["take_apart"] = (a.get("take_apart", "") + "; or " if "take_apart" in a else "") + \
+                f"strip the {broken[0]} for parts instead of fixing it (item = {broken[0]})"
         if self.can_paint_own(st):
             a["paint"] = "paint a picture (target = what of)"
         if self.can_message_bolt(st):
@@ -1275,11 +1408,15 @@ class Jay:
             ("YOU HEARD:\n" + "\n".join(f"- {h['name']}" + (" (to you)" if h["to"] == self.world.creature else "")
                                          + f": \"{h['text']}\"" for h in heard)) if wv and heard else "",
             f"LYING HERE: {', '.join(i['name'] for i in self.world_items(st))}" if wv and self.world_items(st) else "",
+            ("LEFT HERE FOR SOMEONE ELSE (you can see them, but they aren't yours and the town won't let you take "
+             "them): " + ", ".join(f"{i['name']} (for {i['for'].capitalize()})" for i in self.not_mine(st)))
+            if wv and self.not_mine(st) else "",
             f"WHAT I THINK OF BOLT: {st['about_bolt']}",
             f"MY THINGS: {self.inv_summary(st)}",
             f"MY SHELF: {', '.join(st['shelf']) or 'empty'}",
             ("WHAT I'VE FIGURED OUT ABOUT MY THINGS (mine for good): " + " | ".join(self.shelf_knowledge(st)))
             if self.shelf_knowledge(st) else "",
+            self.plans_note(st),
             f"FOOD I'VE HIDDEN: {self.cache_summary(st)}",
             f"SOUNDS I CAN DO: {sounds}",
             f"SKILLS: {skills}",
@@ -1370,6 +1507,11 @@ class Jay:
             else:
                 st["events"].append("Someone came by and woke you up in the middle of the night. It's dark and cold.")
 
+        seen = self.notice_company(st)
+        if seen:
+            st["events"].append(f"You notice: {seen}.")
+            new_mems.append(self._mem(st, now_iso, "notice", f"I saw: {seen}.", 0, False))
+
         if not st["name"]:
             self._choose_name(st)
             st["tick"] += 1
@@ -1404,7 +1546,7 @@ class Jay:
             act["target"] = self.places_to_go(st)[0]      # wants to fly, didn't say where: somewhere he hasn't been lately
         place_before = st["place"]
         outcome, special, cost = self.execute(st, act, v)
-        if act["action"] in WORLD_DOING:
+        if act["action"] in WORLD_DOING and not didnt_happen(outcome):
             self.world_queue(st, "doing", text=WORLD_DOING[act["action"]])
         st["energy"] = clamp(st["energy"] - cost - 1, 0, 100)
 
@@ -1418,6 +1560,8 @@ class Jay:
         except (TypeError, ValueError):
             feeling = 0
         feeling = clamp(feeling, -2, 2)
+        if didnt_happen(outcome):
+            feeling = min(feeling, 0)            # something that didn't happen can't be a win (Bolt's rule)
 
         a = act["action"]
         spot = f"being at {PLACES[st['place']]['name']}"
@@ -1547,7 +1691,8 @@ class Jay:
         keep = []
         for c in st["caches"]:
             age_days = (self.clock.time() - c.get("t", self.clock.time())) / 86400
-            if not c["forgotten"] and self.rng.random() < max(0.01, 0.05 - 0.004 * lvl):
+            locked = c["place"] == "fir" and self.working(st, "locker")
+            if not c["forgotten"] and not locked and self.rng.random() < max(0.01, 0.05 - 0.004 * lvl):
                 c["forgotten"] = True
             if c["forgotten"] and age_days > 30 and c["food"] in CACHEABLE_SPROUTS and self.rng.random() < 0.3:
                 st["events"].append(f"There's {CACHEABLE_SPROUTS[c['food']]} coming up at {PLACES[c['place']]['name']}, "
@@ -1585,12 +1730,17 @@ class Jay:
         if blocked:
             return f"You tried to fly to {p['name']}, but {blocked[0].lower()}{blocked[1:]}", False, 1
         cost = p["cost"] + (4 if v["snow"] and dest in MOUNTAIN else 0) + (2 if v["wind"] >= 25 else 0)
+        how = "flew"
+        if self.working(st, "zipline") and {st["place"], dest} == MOUNTAIN:
+            cost, how = 1, "rode your zipline"
+        elif self.working(st, "balloon") and dest == "summit" and cost > 3:
+            cost, how = 3, "floated up in your hot-air balloon"
         if st["energy"] - cost < 5:
             return f"You wanted to fly to {p['name']} but you're too worn out.", False, 0
         st["world_go_from"] = st["place"]
         self.world_queue(st, "go", to=to_world(dest))
         st["place"] = dest
-        text = f"You flew from {here} to {p['name']}: {p['desc']}."
+        text = f"You {how} from {here} to {p['name']}: {p['desc']}."
         special = dest not in st["visited"]
         if special:
             st["visited"].append(dest)
@@ -1645,6 +1795,16 @@ class Jay:
     def _do_snatch(self, st, act, v):
         here = PLACES[st["place"]]
         lvl = self._level(st, "snatch")
+        want = [p for p, where in self.wanted_parts(st) if where == st["place"]]
+        if want and self.rng.random() < (0.55 if self.working(st, "spyglass") else 0.4):
+            part = self.rng.choice(want)
+            self.inv_add(st, part, "part")
+            return (f"You hunted around {here['name']} and found {a_an(part)}, one of the parts you've been looking for."
+                    + self._xp(st, "snatch"), True, 2)
+        fix = self.spot_fixer(st)
+        if fix:
+            return (f"You poked around {here['name']} and came across {a_an(JOBS[fix]['name'])}. Looking it over, you "
+                    "can tell it could work again if somebody fixed it.", True, 2)
         if self.rng.random() < 0.02 + 0.003 * lvl:
             item = weighted(self.rng, RARES)
         elif self.rng.random() < 0.5 + 0.04 * lvl:
@@ -1784,7 +1944,7 @@ class Jay:
         return f"You remembered back to {m['t'][:10]}: \"{clean(m['text'], 200)}\" {thought}".strip(), False, 0
 
     def _do_nap(self, st, act, v):
-        gain = 25 + (10 if st["place"] == "fir" else 0)
+        gain = 25 + (10 if st["place"] == "fir" else 0) + (15 if st["place"] == "mountain_trail" and self.working(st, "lantern") else 0)
         st["energy"] = clamp(st["energy"] + gain, 0, 100)
         return f"You napped at {PLACES[st['place']]['name']}.", False, 0
 
@@ -1855,7 +2015,11 @@ class Jay:
     def _level(self, st, skill):
         """Practice plus study: every 5 notes on a subject that trains this skill is a bonus level, up to 3."""
         notes = sum(len(st["notebooks"].get(t, [])) for t, (sk, _, _) in TOPICS.items() if sk == skill)
-        return min(10, skill_level(st["skills"][skill]) + min(3, notes // 5))
+        return min(10, skill_level(st["skills"][skill]) + min(3, notes // 5) + self.machine_bonus(st, skill))
+
+    def machine_bonus(self, st, skill):
+        """Levels a working build adds (the spyglass for snatching, say)."""
+        return sum(n for k, n in MACHINE_BONUS.get(skill, []) if self.working(st, k))
 
     def learn(self, st, kind, source, text):
         """Reacts to something he read, keeps words he liked, files what he learned in the right notebook."""
@@ -1884,7 +2048,7 @@ class Jay:
             out += " (Learned: " + "; ".join(facts) + ".)"
         if words:
             out += f" (New favorite words: {', '.join(words)}.)"
-        return (out + trained + self.revise_beliefs(st, source, text)).strip()
+        return (out + trained + self.revise_beliefs(st, source, text) + self.plan_idea(st, text)).strip()
 
     def revise_beliefs(self, st, source, text):
         """Learning by correction: if what he read shows something he figured out about one of his things was wrong,
@@ -1991,7 +2155,10 @@ class Jay:
         return f"You looked up {topic} and read about {title}. {self.learn(st, 'looked up', title, extract)}", False, 0
 
     def _do_examine(self, st, act, v):
-        item = pick(act, self.inv_of(st, {"shiny", "gift", "invention"}))
+        key = self.plan_named(st, act["item"] or act["target"])
+        if key:
+            return self.study_plan(st, key)
+        item = pick(act, self.inv_of(st, {"shiny", "gift", "invention", "part"}))
         if not item:
             return "You looked for something to study but couldn't find it among your things.", False, 0
         key = item_key(item)
@@ -2067,6 +2234,9 @@ class Jay:
                 + self._xp(st, "tinker", 2), True, 2)
 
     def _do_take_apart(self, st, act, v):
+        key = self.plan_named(st, act["item"] or act["target"])
+        if key and JOBS[key]["fix"]:
+            return self.strip_fixer(st, key)
         item = pick(act, self.inv_of(st, {"invention"}))
         parts = st["inv"][item].get("parts", []) if item else []
         if not item or not self.inv_take(st, item):
@@ -2116,6 +2286,8 @@ class Jay:
             return "You opened your beak, then didn't say anything.", False, 0
         to = awake[0] if len(awake) == 1 else None
         self.world_queue(st, "say", text=msg, **({"to": to["id"]} if to else {}))
+        if to:
+            self.remember_talk(st, to["name"], "", msg)
         return f"You said to {to['name'] if to else 'everyone here'}: \"{msg}\"", True, 0
 
     def _do_give(self, st, act, v):
@@ -2360,6 +2532,8 @@ class Jay:
                              f"WHAT YOU'VE BEEN DOING:\n{mine}\n"
                              + self.grounding(st)
                              + (f"WHAT YOU THINK OF BOLT: {st['about_bolt']}\n" if h["from"] == "bolt" else "")
+                             + self.fellow_facts(st, h["text"], who)
+                             + self.past_lines(st, h["text"])
                              + (f"WORDS YOU'VE PICKED UP: {', '.join(st['words'][-10:])}\n" if st["words"] else "")
                              + (f"THINGS YOU KNOW THAT CONNECT: {'; '.join(self.relevant_notes(st, text=h['text'], n=3))}\n"
                                 if self.relevant_notes(st, text=h["text"], n=3) else "")
@@ -2372,6 +2546,7 @@ class Jay:
         if not text:
             return
         self.remember_convo(st, who, h["text"], text)
+        self.remember_talk(st, who, h["text"], text)
         st["replies"].append(now)
         self.world_queue(st, "say", text=text, to=h["from"])
         self.remember(self._mem(st, self.clock.now().isoformat(timespec="seconds"), "talk",
@@ -2381,6 +2556,277 @@ class Jay:
                                          f"{no_md(who)}: \"{no_md(clean(h['text'], 200))}\" / {st['name']}: \"{no_md(text)}\"",
                                  "t": now})
         self.save()
+
+    # ---------- who's around (Bolt's notice_company / fellow_facts, Spike's way)
+
+    def notice_company(self, st):
+        """Who else is at his place in the shared town. When that changes (someone shows up, leaves, wakes or falls
+        asleep) he notices, and remembers when and where he last saw them. Returns what he noticed, or ''."""
+        wv = st.get("world_view") if self.world else None
+        if not wv:
+            return ""
+        loc, co = st["place"], st["company"]
+        now_with = {h["name"]: h["state"] for h in wv["here"]}
+        before = co.get("with", {}) if co.get("at") == loc else {}
+        here_name = PLACES[loc]["name"]
+        seen = []
+        for h in wv["here"]:
+            state = "away, not moving" if h["state"] == "quiet" else h["state"]
+            if h["name"] not in before:
+                seen.append(f"{h['name']} is here at {here_name}, {state}"
+                            + (f", {clean(h['doing'], 60)}" if h.get("doing") and h["state"] == "awake" else ""))
+            elif before[h["name"]] != h["state"]:
+                seen.append(f"{h['name']} " + {"awake": "is awake now", "asleep": "fell asleep"}.get(h["state"], "went quiet"))
+            st["fellows"].setdefault(h["name"], {}).update(seen=self.clock.now().isoformat(timespec="seconds"), seen_at=loc)
+        seen += [f"{who} left {here_name}" for who in before if who not in now_with]
+        co["with"], co["at"] = now_with, loc
+        if seen:
+            log(f"{st['name'] or 'jay'} sees: {'; '.join(seen)}")
+        return "; ".join(seen)
+
+    def remember_talk(self, st, name, they, me):
+        """What he and another creature just said to each other, kept with what he knows about them."""
+        f = st["fellows"].setdefault(name, {})
+        f["lately"] = (f.get("lately", []) + [{"when": self.clock.now().isoformat(timespec="seconds"), "where": st["place"],
+                                               "they": clean(they, 160), "me": clean(me, 160)}])[-3:]
+
+    def talks_remembered(self, name):
+        """His last talks with a creature, from the memory book (for before he kept them with what he knows)."""
+        out = []
+        for m in self.memories[-300:]:
+            hit = re.match(rf'{re.escape(name)} said "(.*?)" and I said "(.*?)"$', m["text"])
+            if hit:
+                out.append({"when": m["t"], "where": m.get("place"), "they": clean(hit.group(1), 160),
+                            "me": clean(hit.group(2), 160)})
+        return out[-3:]
+
+    def fellow_facts(self, st, text, talking_to=None):
+        """One plain line per creature this talk touches: the one talking, one here with him, or one it points at by
+        name, by its human's name, or by a clue like "your friend" or "the crow". Facts only, never how to feel."""
+        wv = st.get("world_view") if self.world else None
+        here = {h["name"] for h in (wv or {}).get("here", [])}
+        kin = bool(KIN.search(text or ""))
+        lines = []
+        for name in dict.fromkeys(list(FELLOWS) + list(st["fellows"])):
+            f, met = FELLOWS.get(name, {}), st["fellows"].get(name, {})
+            owner = f.get("owner")
+            if not (name == talking_to or name in here or kin or re.search(rf"\b{re.escape(name)}\b", text or "", re.I)
+                    or (owner and re.search(rf"\b{re.escape(owner)}'?s\b", text or "", re.I))):
+                continue
+            him = f.get("him", "them")
+            bits = [f"{name}: {f.get('is', 'another creature')}" + (f", {owner}'s creature" if owner else "")
+                    + (f", lives at {PLACES[f['home']]['name']}" if f.get("home") in PLACES else "")]
+            if name in here:
+                bits.append("here with you now")
+            elif met.get("seen"):
+                bits.append(f"you last saw {him} at {PLACES.get(met['seen_at'], PLACES['fir'])['name']} {when_said(met['seen'])}")
+            lately = met.get("lately") or self.talks_remembered(name)
+            if lately:
+                bits.append(f"you last talked with {him} {when_said(lately[-1]['when'])}")
+            lines.append("- " + ". ".join(b[:1].upper() + b[1:] for b in bits) + ".")
+            if lately and name != talking_to:     # talking to him, the conversation already shows it
+                lines += [f"  {when_said(t['when'])}, " + (f"{name} said \"{t['they']}\" and " + (
+                    f"you said \"{t['me']}\"" if t["me"] else "you didn't answer") if t["they"]
+                    else f"you said to {name}: \"{t['me']}\"") for t in lately[-2:]]
+        return ("OTHER CREATURES YOU KNOW (creatures like you, not you and not human; bring one up only if this is "
+                "about them):\n" + "\n".join(lines) + "\n") if lines else ""
+
+    def not_mine(self, st):
+        """Things lying here that were left for someone else (Caelan's blueprints for Bolt): he can see them, not take them."""
+        wv = st.get("world_view") or {}
+        return [i for i in wv.get("items", []) if i.get("for") not in (None, self.world.creature)]
+
+    # ---------- his past (Bolt's remember_past)
+
+    def remember_past(self, text):
+        """What his whole life (the memory book) has to say about what someone just said: the moments sharing the
+        rarest words with it ('acorn' counts, 'thing' hardly does). Asked about his past, up to 3; otherwise 1 at
+        most, and only a strong match, so it never turns into a list."""
+        if self._past[0] != len(self.memories):
+            index = [(stems(f"{m['text']} {m.get('place', '')}"), m) for m in self.memories]
+            self._past = (len(self.memories), index, collections.Counter(w for st_, _ in index for w in st_))
+        _, index, df = self._past
+        names = {w.lower() for w in [self.state["name"] or "", self.cfg["owner_name"]] + list(self.state["people"])
+                 + list(FELLOWS)}
+        words = stems(text) - names - ASKING_WORDS
+        if not index or not words:
+            return []
+        asked = bool(ASKS_PAST.search(text))
+        lately = (self.clock.now() - timedelta(hours=2)).isoformat(timespec="seconds")
+        scored = []
+        for i, (st_, m) in enumerate(index):
+            hit = words & st_
+            talk = m.get("action") == "talk"
+            if hit and (asked or len(hit) >= 2) and not (talk and m["t"] >= lately):
+                score = sum(math.log(len(index) / df[w]) for w in hit) + 0.5 * (m.get("special") and not talk) - 0.5 * talk
+                scored.append((score, i, m))
+        best = [x for x in sorted(scored, key=lambda x: x[:2], reverse=True) if x[0] >= (1 if asked else 6)][:3 if asked else 1]
+        return [f"{when_said(m['t'])} at {PLACES.get(m.get('place'), PLACES['fir'])['name']}: {clean(m['text'], 160)}"
+                for _, _, m in sorted(best, key=lambda x: x[1])]   # oldest first, like a story
+
+    def past_lines(self, st, text):
+        past = self.remember_past(text)
+        return ("FROM YOUR MEMORY BOOK (things that really happened to you, that connect to what they said):\n"
+                + "".join(f"- {h}\n" for h in past)) if past else ""
+
+    # ---------- plans and fixer-uppers (Bolt's blueprints, Spike's way)
+
+    def built(self, st, key):
+        return key in st["built"]
+
+    def working(self, st, key):
+        """Built and standing on its own (not built into something bigger)."""
+        return key in st["built"] and not st["built"][key].get("in")
+
+    def my_plans(self, st):
+        """Plans he has in his head and broken things he knows about, not yet built or stripped."""
+        return [k for k, p in st["plans"].items() if k in JOBS and not p.get("stripped") and not self.built(st, k)]
+
+    def plan_idea(self, st, text):
+        """Reading about one of the PLANS is enough to get the idea."""
+        new = [k for k, (words, *_) in PLANS.items() if k not in st["plans"] and re.search(rf"\b({words})\b", text or "", re.I)]
+        for k in new:
+            st["plans"][k] = {"learned": 0}
+        return (f" (That gave you an idea: you could build {' and '.join(a_an(PLANS[k][1]) for k in new)} yourself. "
+                "Study the plan to work out what it takes.)") if new else ""
+
+    def plan_named(self, st, text):
+        """Which of his plans or broken things he means. A part of one (the 'lantern chimney glass') isn't the plan."""
+        t = str(text or "").lower()
+        if not t or any(p.lower() in t for p in self.inv_of(st, {"part"})):
+            return None
+        return next((k for k in self.my_plans(st) if JOBS[k]["name"].lower() in t
+                     or (JOBS[k]["words"] if JOBS[k]["fix"] else k) in t), None)
+
+    def plan_steps(self, key):
+        j = JOBS[key]
+        found = lambda w: f" (one turns up at {PLACES[w]['name']})"
+        if j["fix"]:
+            return [f"{j['wrong'][p]}, so it needs {a_an(p)}{found(w)}" for p, w in j["parts"]] + ["that's everything wrong with it"]
+        return ([f"calls for {a_an(p)}{found(w)}" for p, w in j["parts"]]
+                + [f"needs a working {JOBS[n]['name']} built into it" for n in j["needs"]]
+                + [f"gets built at {PLACES[j['at']]['name']}, and you understand how it all goes together"])
+
+    def owns_part(self, st, part):
+        it = st["inv"].get(part)
+        return bool(it and it["kind"] == "part" and it["count"] > 0)
+
+    def wanted_parts(self, st):
+        """Parts he's worked out his plans need and doesn't have yet: [(part, where it turns up)]."""
+        out = []
+        for k in self.my_plans(st):
+            for p, w in JOBS[k]["parts"][:st["plans"][k].get("learned", 0)]:
+                if not self.owns_part(st, p) and (p, w) not in out:
+                    out.append((p, w))
+        return out
+
+    def fixer_eye(self, st):
+        """Whether he knows enough to look at a broken thing and see it could work again."""
+        return self._level(st, "tinker") >= 2 and any(MECHANICAL.search(n) for nb in st["notebooks"].values() for n in nb)
+
+    def spot_fixer(self, st):
+        """Snatching, he can come across a broken thing worth fixing: one at a time per place."""
+        here = [k for k, j in JOBS.items() if j["fix"] and j["at"] == st["place"]]
+        if not here or not self.fixer_eye(st) or self.rng.random() > 0.12:
+            return None
+        if any(k in self.my_plans(st) for k in here):
+            return None                                    # still one sitting here
+        k = next((k for k in here if k not in st["plans"]), None)
+        if k:
+            st["plans"][k] = {"learned": 0}
+        return k
+
+    def study_plan(self, st, key):
+        j, plan = JOBS[key], st["plans"][key]
+        what = f"the {j['name']}" if j["fix"] else f"your plan for the {j['name']}"
+        if j["fix"] and st["place"] != j["at"]:
+            return f"You wanted to look over the {j['name']}, but it's sitting at {PLACES[j['at']]['name']}.", False, 0
+        steps = self.plan_steps(key)
+        if plan.get("learned", 0) >= len(steps):
+            return f"You went over {what} again, but you already know everything about it.", False, 0
+        fact = steps[plan.get("learned", 0)]
+        plan["learned"] = plan.get("learned", 0) + 1
+        self.note(st, "machines", f"{j['name']}: {fact.split(' (one turns up')[0]}")
+        st["energy"] = clamp(st["energy"] + 2, 0, 100)
+        return (f"You studied {what} and worked out that {'' if j['fix'] else 'it '}{fact}." + self._xp(st, "tinker"),
+                plan["learned"] == len(steps), 0)
+
+    def _do_build(self, st, act, v):
+        """Builds one of his plans or fixes a broken thing, if he's ready. Every 'not yet' says plainly what's missing."""
+        mine = self.my_plans(st)
+        key = self.plan_named(st, act["target"] or act["item"]) or (mine[0] if len(mine) == 1 else None)
+        if not mine:
+            return "You wanted to build something big, but you don't have any plans.", False, 0
+        if not key:
+            return (f"You wanted to build {clean(act['target'], 40) or 'something'}, but you don't have a plan for that "
+                    f"(you have plans for: {', '.join(JOBS[k]['name'] for k in mine)}).", False, 0)
+        j = JOBS[key]
+        verb, name = ("fix", j["name"]) if j["fix"] else ("build", j["name"])
+        if st["plans"][key].get("learned", 0) < len(self.plan_steps(key)):
+            return (f"You wanted to {verb} the {name}, but you haven't worked out "
+                    + ("everything that's wrong with it yet." if j["fix"] else "your plan for it well enough yet."), False, 0)
+        if st["place"] != j["at"]:
+            return (f"You wanted to {verb} the {name}, but " + ("it's sitting" if j["fix"] else "it gets built")
+                    + f" at {PLACES[j['at']]['name']}.", False, 0)
+        parts = [p for p, _ in j["parts"]]
+        missing = [p for p in parts if not self.owns_part(st, p)]
+        if missing:
+            return f"You wanted to {verb} the {name}, but you're still missing: {', '.join(missing)}.", False, 0
+        unknown = [p for p in parts if not st["item_lore"].get(item_key(p), {}).get("facts")]
+        if unknown:
+            return (f"You wanted to {verb} the {name}, but you don't understand the {' or the '.join(unknown)} well "
+                    "enough yet (study it first).", False, 0)
+        unbuilt = [JOBS[n]["name"] for n in j["needs"] if not self.working(st, n)]
+        if unbuilt:
+            return f"You wanted to {verb} the {name}, but it needs a working {' and a working '.join(unbuilt)} first.", False, 0
+        if self._level(st, "tinker") < j["level"]:
+            return (f"You wanted to {verb} the {name}, but your tinkering isn't up to it yet "
+                    f"(level {self._level(st, 'tinker')} of {j['level']}).", False, 0)
+        for p in parts:
+            it = st["inv"][p]
+            it["count"] -= 1
+            if it["count"] <= 0:
+                del st["inv"][p]
+                if p in st["shelf"]:
+                    st["shelf"].remove(p)
+        for n in j["needs"]:
+            st["built"][n]["in"] = key
+        st["built"][key] = {"when": self.clock.now().isoformat(timespec="seconds")}
+        done = "got the {} working again".format(name) if j["fix"] else f"built the {name}"
+        return f"You {done}! Now {BUILT_DOES[key]}." + self._xp(st, "tinker", 4), True, 6
+
+    def strip_fixer(self, st, key):
+        j = JOBS[key]
+        if st["place"] != j["at"]:
+            return f"You wanted to strip the {j['name']} for parts, but it's at {PLACES[j['at']]['name']}.", False, 0
+        st["plans"][key]["stripped"] = True
+        pool = [n for n, _ in PLACES[st["place"]]["items"]] or ["bottle cap", "chrome screw"]
+        got = [self.rng.choice(pool) for _ in range(2)]
+        for g in got:
+            self.inv_add(st, g, "shiny")
+        return (f"You stripped the {j['name']} for parts and came away with {a_an(got[0])} and {a_an(got[1])}."
+                + self._xp(st, "tinker"), False, 3)
+
+    def plans_note(self, st):
+        """For his decision prompt: plain facts about his plans and builds."""
+        lines, fresh = [], 0
+        for k in self.my_plans(st):
+            j, n = JOBS[k], st["plans"][k].get("learned", 0)
+            steps = len(self.plan_steps(k))
+            label = f"the {j['name']} sitting at {PLACES[j['at']]['name']}" if j["fix"] else j["name"]
+            if not n:
+                lines.append(f"{label} (you haven't studied it yet)")
+                continue
+            known = [p for p, _ in j["parts"][:n]]
+            have = [p for p in known if self.owns_part(st, p)]
+            lines.append(f"{label} ({min(n, steps)} of {steps} things worked out; "
+                         f"{'needs' if j['fix'] else 'calls for'} {', '.join(known)}; you have {', '.join(have) or 'none of them'})")
+        if len(lines) > 4:
+            lines = lines[-4:] + [f"{len(lines) - 4} more"]
+        made = [f"{JOBS[k]['name']} ({BUILT_DOES[k]})" for k in st["built"] if self.working(st, k)]
+        return "\n".join(x for x in [
+            "MY PLANS AND FIXER-UPPERS: " + "; ".join(lines) if lines else "",
+            "WHAT I'VE BUILT OR FIXED: " + "; ".join(made) if made else ""] if x)
 
     # ---------- painting
 
@@ -2512,7 +2958,7 @@ class Jay:
         st = copy.deepcopy(self.state)
         v = self.view(st)
         pid = st["next_painting_id"]
-        skill = skill_level(st["skills"]["paint"])
+        skill = min(10, skill_level(st["skills"]["paint"]) + self.machine_bonus(st, "paint"))
         index = self.paint_index()
 
         raw = self.think(self.system_prompt(st), self.plan_prompt(st, v, job, skill, index), 900)
@@ -2691,9 +3137,15 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
         msgs = self.discord.fetch(after=st["discord_cursor"], limit=50 if not first else 20)
         if first and not msgs:
             st["discord_cursor"] = "0"     # empty channel: we're caught up, so answer from now on
+        started = self.discord_started = self.discord_started or self.clock.time()
         for m in msgs:
             st["discord_cursor"] = m["id"]
             a = m.get("author") or {}
+            try:            # sent long before he started up (he was down a while): read it, don't act on it
+                stale = self.clock.time() - datetime.fromisoformat(m["timestamp"]).timestamp() > CATCH_UP \
+                    and started > self.clock.time() - 120
+            except (KeyError, TypeError, ValueError):
+                stale = False
             if str(a.get("id")) == self.me_id:
                 self.channel_log.append(("me", m.get("content", "")))
                 continue
@@ -2707,9 +3159,11 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
                 st["bolt_streak"], st["bolt_rest_until"] = 0, 0.0     # a human spoke: Bolt's break ends too
             if bolt:
                 self.note_bolt(content)
-            if first:
+            if first or stale:
                 continue       # catching up on history: learn from it, don't answer it
             named = self.named_command(content)
+            if (content.lower().startswith("!jay") or named) and not bolt:
+                self.save()    # the cursor is past this command before it runs, so a !jay restart never replays
             if bolt and content.startswith("!"):
                 continue       # Bolt doesn't get to run our commands
             if content.lower().startswith("!jay"):
@@ -2760,7 +3214,10 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
                              + self.grounding(st)
                              + f"BACKGROUND ON {who.upper()} (don't bring it up unless what they just said is about it): "
                              f"{'; '.join(person['facts']) or 'not much yet'}\n"
-                             + (f"WHAT YOU THINK OF BOLT: {st['about_bolt']}\n" if bolt else "")
+                             + (f"WHAT YOU THINK OF BOLT: {st['about_bolt']}\n"
+                                if bolt or re.search(r"\bbolt\b", content, re.I) else "")
+                             + self.fellow_facts(st, content, "Bolt" if bolt else None)
+                             + self.past_lines(st, content)
                              + (f"WORDS YOU'VE PICKED UP: {', '.join(st['words'][-10:])}\n" if st["words"] else "")
                              + (f"THINGS YOU KNOW THAT CONNECT TO WHAT THEY SAID: {'; '.join(on_topic)}\n" if on_topic else "")
                              + f"MY SHELF: {', '.join(st['shelf']) or 'empty'}\n"
@@ -2772,6 +3229,8 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
         if not text:
             return
         self.remember_convo(st, who, content, text)
+        if bolt:
+            self.remember_talk(st, "Bolt", content, text)
         if not bolt:
             self.learn_about_person(st, who, content)
             st["human_at"] = now               # at night, he stays up a while for them
@@ -2981,7 +3440,8 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
             compile((BASE / "jay.py").read_text(encoding="utf-8"), "jay.py", "exec")
         except SyntaxError as e:
             return False, f"jay.py has an error: {e}"
-        tests = [("sim_days.py", ["1"]), ("loop_test.py", []), ("habits_test.py", []), ("autonomy_test.py", [])]
+        tests = [("sim_days.py", ["1"]), ("loop_test.py", []), ("habits_test.py", []), ("autonomy_test.py", []),
+                 ("town_test.py", [])]
         if os.environ.get("SHASTA_WORLD") or (BASE.parent / "shasta-world").is_dir():
             tests.append(("world_test.py", []))
         for name, extra in tests:
