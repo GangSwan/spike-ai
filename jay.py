@@ -14,6 +14,7 @@ Test:  python tests/sim_days.py   days of chaos in seconds, checks nothing break
        python tests/habits_test.py   learning, tinkering, plain talk, ruts, calls, waking, restarts
        python tests/autonomy_test.py needs, the daily menu, boredom, goals, no parroting, a stubborn brain's day
        python tests/town_test.py     who's around, who Bolt is, his past, Discord catch-up, plans and fixer-uppers
+       python tests/graffiti_test.py spray paint, walls, pieces going up in shasta-world (needs a shasta-world checkout)
 
 `python jay.py` runs him under a tiny supervisor, so `!jay restart` (or a data/restart.flag file) can test the
 new code and restart him into it without anyone touching the window.
@@ -79,6 +80,7 @@ DEFAULT_CONFIG = {
     "daily_painting": True,             # paint one picture at dusk, before sleeping
     "max_paintings_per_day": 6,         # cap on requests (!jay paint); the dusk one always happens
     "max_own_paintings_per_day": 3,     # pictures he decides to paint himself, on top of the dusk one
+    "max_graffiti_per_day": 3,          # pieces he sprays on walls in shasta-world (the world allows 4)
     "paint_width": 400,
     "paint_height": 300,
     "world_url": "",                    # shasta-world, e.g. "http://100.100.19.125:8642". Empty = off: his own town only.
@@ -521,6 +523,22 @@ BUILT_DOES = {   # what a finished one changes in his life
 MACHINE_BONUS = {"snatch": [("spyglass", 2)], "forage": [("vane", 1)], "mimic": [("horn", 2)], "paint": [("obscura", 1)]}
 FIX_SOUNDS = {"musicbox": "music box tune", "cuckoo": "cuckoo clock", "tinbird": "wind-up bird whirr",
               "bell": "bicycle bell", "radio": "radio jingle"}
+# Graffiti (shasta-world PROTOCOL.md section 10): spray paint turns up where people fix and junk things, and the
+# world owns the walls. A can covers a few pieces.
+SPRAY_FINDS = {"junkyard": 0.3, "garage": 0.25, "shed": 0.25, "machine_shop": 0.2}
+SPRAY_CANS = ["half-empty can of red spray paint", "can of sky-blue spray paint", "dented can of yellow spray paint",
+              "can of hot-pink spray paint", "fat silver paint marker", "can of lime-green spray paint"]
+CAN_PIECES = 3
+GRAFFITI_KINDS = {"tag": "tag", "throwup": "throw-up", "mural": "mural"}
+WALL_STUFF = {   # (world place, wall) -> what it's made of, for the picture
+    ("junkyard", "crusher"): "metal", ("junkyard", "fridges"): "metal", ("junkyard", "gate"): "metal",
+    ("rail_yard", "water_tower"): "wood", ("rail_yard", "boxcar"): "metal", ("rail_yard", "signal_shed"): "wood",
+    ("creek", "culvert"): "concrete", ("garage", "roll_door"): "metal", ("garage", "back_wall"): "brick",
+    ("diner_roof", "billboard"): "wood", ("diner_roof", "vent"): "metal", ("ambulance_station", "dumpster"): "wood",
+    ("drift_lot", "barrier"): "concrete", ("drift_lot", "fence"): "wood", ("lake", "boathouse"): "wood",
+    ("shed", "door"): "wood", ("shed", "side"): "metal", ("mountain_trail", "trail_box"): "wood",
+    ("old_barn", "barn_door"): "wood", ("old_barn", "silo"): "metal", ("machine_shop", "dock"): "concrete",
+    ("machine_shop", "side"): "brick", ("fir", "fence"): "wood"}
 MECHANICAL = re.compile(r"\b(springs?|gears?|clocks?|motors?|machines?|engines?|hinges?|pulleys?|cranks?|levers?|"
                         r"bearings?|pistons?)\b", re.I)
 # Plain facts about the other creatures he knows, so "your friend" or "the crow" means something to him.
@@ -538,7 +556,7 @@ DRIVES = {   # a need: (the actions that satisfy it, how fast it builds up per t
     "rest":       ({"nap"}, 0.3, "tired"),
     "curiosity":  ({"read", "look_up", "examine", "watch", "reminisce"}, 0.6, "curious, like learning something"),
     "company":    ({"talk", "give", "talk_to_bolt", "give_bolt"}, 0.4, "like some company"),
-    "making":     ({"tinker", "paint", "take_apart", "build"}, 0.5, "like making something"),
+    "making":     ({"tinker", "paint", "take_apart", "build", "tag"}, 0.5, "like making something"),
     "collecting": ({"snatch", "treasure", "pick_up"}, 0.4, "like hunting for treasure"),
     "stashing":   ({"cache"}, 0.4, "like hiding food for winter"),
     "voice":      ({"mimic", "scold"}, 0.3, "loud, like making some noise"),
@@ -942,6 +960,7 @@ def new_state(now):
         "drives": {d: 0.0 for d in DRIVES}, "bench": {}, "place_since": 0, "last_at": {},
         "goals": {"date": None, "list": []},
         "fellows": {}, "company": {}, "plans": {}, "built": {},
+        "graffiti": {"paint": 0, "pieces": [], "days": {}, "tag_name": None, "next": 1}, "tag_queue": [], "walls": {},
     }
 
 
@@ -1118,6 +1137,9 @@ class Jay:
             if names:
                 more = f" (+{len(names) - 12} more)" if len(names) > 12 else ""
                 parts.append(f"{label}: " + ", ".join(names[:12]) + more)
+        if st["graffiti"]["paint"]:
+            n = st["graffiti"]["paint"]
+            parts.append(f"spray paint: enough for {n} more piece{'s' if n > 1 else ''} on a wall")
         return " | ".join(parts) or "nothing yet"
 
     def cache_summary(self, st):
@@ -1219,6 +1241,11 @@ class Jay:
                 f"strip the {broken[0]} for parts instead of fixing it (item = {broken[0]})"
         if self.can_paint_own(st):
             a["paint"] = "paint a picture (target = what of)"
+        if self.can_tag(st):
+            free = [f"{name} ({'bare' if who is None else 'your own piece is on it'})"
+                    for _, name, who, _ in self.walls_here(st) if who in (None, "me")]
+            a["tag"] = ("spray-paint your own graffiti on a wall here (target = which wall: " + "; ".join(free)
+                        + "; why = what you want to paint on it)")
         if self.can_message_bolt(st):
             a["talk_to_bolt"] = "say something to Bolt on Discord (target = exactly what you say)"
             if self.cfg["bolt_accepts_bots"] and self.inv_of(st, {"shiny", "food"}):
@@ -1801,6 +1828,13 @@ class Jay:
             self.inv_add(st, part, "part")
             return (f"You hunted around {here['name']} and found {a_an(part)}, one of the parts you've been looking for."
                     + self._xp(st, "snatch"), True, 2)
+        if (self.world and st["place"] in SPRAY_FINDS and st["graffiti"]["paint"] < 2 * CAN_PIECES
+                and self.rng.random() < SPRAY_FINDS[st["place"]]):
+            can = self.rng.choice(SPRAY_CANS)
+            first = st["graffiti"]["paint"] == 0 and not st["graffiti"]["pieces"]
+            st["graffiti"]["paint"] += CAN_PIECES
+            return (f"You found {a_an(can)} at {here['name']}. It still rattles: enough paint for a few pieces on "
+                    "the walls around town." + self._xp(st, "snatch"), first, 2)
         fix = self.spot_fixer(st)
         if fix:
             return (f"You poked around {here['name']} and came across {a_an(JOBS[fix]['name'])}. Looking it over, you "
@@ -2259,6 +2293,130 @@ class Jay:
         st["own_paints"] = {self._today(): st["own_paints"].get(self._today(), 0) + 1}
         return f"You got your paints out to paint {subject or 'whatever comes'}.", False, 1
 
+    # ---------- graffiti (shasta-world PROTOCOL.md section 10)
+
+    def walls_here(self, st):
+        """The walls where he is: [(wall id, name, whose piece is on top: None, "me" or a name, my mark on top)]."""
+        place = to_world(st["place"])
+        wv = st.get("world_view") if self.world else None
+        tops = {w["surface"]: w for w in (wv or {}).get("walls", [])}
+        mine = {p["surface"]: p for p in st["graffiti"]["pieces"] if p["place"] == place and p["up"]}
+        out = []
+        for wid, name in (st["walls"].get(place) or {}).items():
+            if wv is not None:           # the world's word on what's there
+                top = tops.get(wid)
+                who = None if not top else "me" if top["by"] == self.world.creature else top["by_name"]
+                mark = top["mark"] if who == "me" else None
+            else:                        # the world is away: what he remembers painting
+                who, mark = ("me", mine[wid]["mark"]) if wid in mine else (None, None)
+            out.append((wid, name, who, mark))
+        return out
+
+    def can_tag(self, st):
+        g = st["graffiti"]
+        return (self.world is not None and not st["asleep"] and g["paint"] > 0 and not st["tag_queue"]
+                and g["days"].get(self._today(), 0) < self.cfg["max_graffiti_per_day"]
+                and any(who in (None, "me") for _, _, who, _ in self.walls_here(st)))
+
+    def _do_tag(self, st, act, v):
+        if not self.can_tag(st):
+            return "You shook a can at the wall, then thought better of it.", False, 0
+        free = [w for w in self.walls_here(st) if w[2] in (None, "me")]
+        want = set(re.findall(r"[a-z]{3,}", (act["target"] or "").lower())) - {"the", "wall", "bare", "own", "piece"}
+        scored = sorted(free, key=lambda w: (-len(want & set(re.findall(r"[a-z]{3,}", w[1] + " " + w[0]))),
+                                             w[2] is not None))
+        wid, name, who, mark = scored[0]
+        lvl = self._level(st, "paint")
+        kind = ("mural" if lvl >= 6 and self.rng.random() < 0.5 else
+                "throwup" if lvl >= 3 and self.rng.random() < 0.7 else "tag")
+        self.world_queue(st, "tag", surface=wid, kind=kind)
+        g = st["graffiti"]
+        g["paint"] -= 1
+        today = self._today()
+        g["days"] = {today: g["days"].get(today, 0) + 1}
+        st["tag_queue"].append({"place": to_world(st["place"]), "surface": wid, "wall": name, "kind": kind, "over": mark,
+                                "subject": clean(act["why"], 200), "t": self.clock.time(), "tries": 0})
+        over = " over your old piece" if mark else ""
+        return f"You shook the can and started a {GRAFFITI_KINDS[kind]} on {name}{over}.", False, 2
+
+    def spray_next(self):
+        """Spray the queued piece and put it up in the world. Returns a log line or None."""
+        job = self.state["tag_queue"][0]
+        try:
+            return self._spray(job)
+        except BudgetExceeded:
+            return None
+        except Exception:
+            log("graffiti failed:\n" + traceback.format_exc())
+            job["tries"] += 1
+            if job["tries"] >= 3:
+                self.state["tag_queue"].pop(0)
+            self.save()
+            return None
+
+    def _spray(self, job):
+        """Design the piece, paint it, keep it, queue it for the world. All-or-nothing like a tick."""
+        st = copy.deepcopy(self.state)
+        g = st["graffiti"]
+        now = self.clock.now()
+        place = from_world(job["place"])
+        where = PLACES[place]["name"]
+        kind = GRAFFITI_KINDS[job["kind"]]
+        prompt = (f"You're spray-painting a {kind} on {job['wall']} at {where}. What you had in mind: "
+                  f"{job['subject'] or 'whatever feels right'}.\n"
+                  + (f"Your tag (the name you sign with) is {g['tag_name']}.\n" if g["tag_name"] else
+                     "You don't have a tag yet, the name you'll sign everything with: pick one, 2-6 letters, short and yours.\n")
+                  + "Graffiti is letters first. Pick the words to spray (1-8 letters or digits; a tag is just your tag), "
+                    "2-3 colors as hex, a short title for the piece, and for a mural what's in the picture behind the "
+                    "letters (mountain, jay, crow, sun, water, tree, tracks or building).\n"
+                    'Reply JSON: {"words": "...", "colors": ["#..", "#.."], "title": "...", "picture": "...", '
+                    '"tag_name": "...", "feeling": 0}')
+        try:
+            raw = self.think(self.system_prompt(st), prompt, 400)
+        except BrainError:
+            raw = {}
+        if not g["tag_name"]:
+            g["tag_name"] = (painter.graffiti_words(raw.get("tag_name"), 6) or painter.graffiti_words(st["name"], 3)
+                             or "SPK").replace(" ", "")
+        plan = painter.normalize_graffiti(raw, job["kind"], WALL_STUFF.get((job["place"], job["surface"]), "concrete"),
+                                          place, g["tag_name"])
+        if job["kind"] == "tag":
+            plan["words"] = g["tag_name"]           # a tag is a signature
+        skill = min(10, skill_level(st["skills"]["paint"]) + self.machine_bonus(st, "paint"))
+        n = g["next"]
+        png = painter.make_graffiti(plan, skill, n * 7919 + st["tick"], 400, 300)
+        gdir = self.dir / "graffiti"
+        gdir.mkdir(exist_ok=True)
+        fname = f"{n:04d}.png"
+        tmp = gdir / (fname + ".tmp")
+        with open(tmp, "wb") as f:
+            f.write(png)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, gdir / fname)
+        mark = None
+        if self.world:
+            mark = self.world.queue_mark(st["world"], str(gdir / fname), job["place"], job["surface"], job["kind"],
+                                         title=plan["title"], over=job["over"])
+        g["next"] = n + 1
+        g["pieces"] = (g["pieces"] + [{"n": n, "file": fname, "mark": mark, "place": job["place"], "surface": job["surface"],
+                                       "wall": job["wall"], "kind": job["kind"], "title": plan["title"],
+                                       "words": plan["words"], "t": now.isoformat(timespec="seconds"), "up": True}])[-200:]
+        st["tag_queue"] = st["tag_queue"][1:]
+        try:
+            feeling = clamp(int(round(float(raw.get("feeling", 1)))), -2, 2)
+        except (TypeError, ValueError):
+            feeling = 1
+        st["skills"]["paint"] = round(st["skills"]["paint"] + 0.5, 2)
+        st["outbox"].append({"text": f"{stamp(now)} sprayed a {kind} on {job['wall']} at {where}: "
+                                     f"\"{no_md(plan['title'])}\" ({no_md(plan['words'])})",
+                             "t": self.clock.time(), "file": str(gdir / fname)})
+        text = f"I sprayed a {kind} on {job['wall']} at {where}: \"{plan['title']}\" ({plan['words']}), signed {g['tag_name']}."
+        self._commit(st, [self._mem(st, now.isoformat(timespec="seconds"), "tag", text, feeling, n == 1)])
+        if self.world:
+            self.world_settle()
+        return f"sprayed #{n} ({job['kind']}) \"{plan['title']}\" on {job['place']}/{job['surface']}"
+
     def _do_talk_to_bolt(self, st, act, v):
         msg = no_command(clean(act["target"], 220))
         if not msg:
@@ -2459,7 +2617,10 @@ class Jay:
             st["world_view"] = None     # the world is away: he lives in his own town
             return
         st["world_view"] = {"here": seen["here"], "items": seen["items"], "cant_go": seen["cant_go"],
-                            "summary": seen["summary"], "around": seen.get("around") or []}
+                            "summary": seen["summary"], "around": seen.get("around") or [], "walls": seen.get("walls") or []}
+        town = self.world.town()
+        if town and town.get("surfaces"):
+            st["walls"] = {p: {w["id"]: w["name"] for w in ws} for p, ws in town["surfaces"].items()}
         for d in self.world.new_deliveries(st["world"], seen):
             item = clean(d["item"], 60)
             if d["how"].startswith("you picked it up"):
@@ -2488,6 +2649,11 @@ class Jay:
                 st["events"].append(f"You couldn't get there: {msg}")
             elif act == "take":
                 st["events"].append(f"You went for something lying around, but: {msg}")
+            elif act == "mark":           # a piece the world wouldn't put up: he still has the picture
+                for p in st["graffiti"]["pieces"]:
+                    if p["mark"] == body["id"]:
+                        p["up"] = False
+                st["events"].append(f"Your piece on the {body['surface'].replace('_', ' ')} didn't go up: {msg}")
             elif act == "hide":           # the world wouldn't take it: keep it in his own town instead
                 st["hidden"].append({"place": from_world(body["place"]), "thing": body["item"], "from": body["by"]})
         self.save()
@@ -3443,7 +3609,7 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
         tests = [("sim_days.py", ["1"]), ("loop_test.py", []), ("habits_test.py", []), ("autonomy_test.py", []),
                  ("town_test.py", [])]
         if os.environ.get("SHASTA_WORLD") or (BASE.parent / "shasta-world").is_dir():
-            tests.append(("world_test.py", []))
+            tests += [("world_test.py", []), ("graffiti_test.py", [])]
         for name, extra in tests:
             path = BASE / "tests" / name
             if not path.exists():
@@ -3535,6 +3701,10 @@ article p{margin:6px 12px} article p:last-child{margin-bottom:12px} .meta{color:
                 sys.exit(RESTART_CODE)
             if self.state["paint_queue"]:
                 what = self.paint_next()
+                if what:
+                    log(what)
+            if self.state["tag_queue"]:
+                what = self.spray_next()
                 if what:
                     log(what)
             if now >= next_tick or self.soon:

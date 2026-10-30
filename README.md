@@ -42,6 +42,13 @@ to do. He sleeps at night (no model calls). He names himself on his first mornin
     gears or engines), snatching can turn up a broken music box, cuckoo clock, wind-up tin bird, bicycle bell, trail
     lantern or radio. Studying one finds one thing wrong per look; he fixes it where it sits (most give him a new
     sound to learn there) or strips it for parts. Nothing pushes him to do any of it.
+  - **Graffiti** (in shasta-world): spray paint turns up when he snatches around the junkyard, garage, shed and
+    machine shop (a can covers about 3 pieces). With paint and a wall where he is, he can **tag** it: he picks a
+    tag name the first time and signs everything with it, then designs the piece (words, colors, a title) and his
+    painter sprays it onto that wall's brick, wood, metal or concrete. Tags first; throw-ups (bubble letters) from
+    paint 3; murals (a little painted scene with letters across it) from paint 6. The piece goes up in the town
+    for everyone (the map shows it when you tap the place), the picture is posted to Discord and kept in
+    `data/graffiti/`. He can paint over his own pieces, never Bolt's, and does at most 3 a day.
   - Also: watch, think, nap, eat, reminisce (he pages back through his whole life and thinks about it).
 - **Learning (Bolt's way):**
   - **read**: his `library/` has 8 short books (6 from Bolt's library, plus *Jays, and the Birds Who
@@ -146,7 +153,7 @@ Type in his window to talk to him as yourself (`owner_name`). Commands work ther
 
 **Restarting into new code:** `!jay restart` (you only), or put an empty `data/restart.flag` file
 there. He runs his tests on the new code first (`sim_days`, `loop_test`, `habits_test`, and
-`world_test` if shasta-world is next to this folder) and refuses to restart into broken code, saying
+`world_test` and `graffiti_test` if shasta-world is next to this folder) and refuses to restart into broken code, saying
 why in Discord. `python jay.py` is a tiny supervisor that starts him again when he asks.
 
 ## Discord commands
@@ -248,6 +255,15 @@ This runs the real jay in the real shasta-world server (it looks for a shasta-wo
 this repo, or set `SHASTA_WORLD`), with a scripted Bolt: talking both ways, gifts both ways, picking
 things up, `!jay leave`, the summit rule, sleep, the world going away, crashes before the ack, and a
 chaotic week where every gift must arrive exactly once.
+
+```bash
+python tests/graffiti_test.py
+```
+
+Graffiti in the real server: finding spray paint, the walls on his menu, a piece going up (the map's
+"tagging now", the wall, Bolt seeing it, the Discord post), throw-ups and murals as he gets better,
+painting over his own piece but never Bolt's, a refused piece, painting while the world is away and a
+restart before it comes back, and the daily cap.
 
 ## Moving to the home server
 
