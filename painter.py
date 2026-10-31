@@ -674,3 +674,163 @@ def make_painting(plan, skill, seed, w=400, h=300):
     rng = random.Random(seed)
     scene = build_scene(plan, skill, rng, w, h)
     return png_bytes(w, h, paint(scene, plan, skill, rng))
+
+
+# ---------- graffiti: a piece on a wall in town (shasta-world PROTOCOL.md section 10)
+
+KINDS = ["tag", "throwup", "mural"]
+MATERIALS = ["brick", "concrete", "metal", "wood"]
+FONT = {   # 5x7 letters; bubble letters and tags are both drawn from these
+    "A": "01110 10001 10001 11111 10001 10001 10001", "B": "11110 10001 10001 11110 10001 10001 11110",
+    "C": "01111 10000 10000 10000 10000 10000 01111", "D": "11110 10001 10001 10001 10001 10001 11110",
+    "E": "11111 10000 10000 11110 10000 10000 11111", "F": "11111 10000 10000 11110 10000 10000 10000",
+    "G": "01111 10000 10000 10011 10001 10001 01111", "H": "10001 10001 10001 11111 10001 10001 10001",
+    "I": "11111 00100 00100 00100 00100 00100 11111", "J": "00111 00010 00010 00010 00010 10010 01100",
+    "K": "10001 10010 10100 11000 10100 10010 10001", "L": "10000 10000 10000 10000 10000 10000 11111",
+    "M": "10001 11011 10101 10101 10001 10001 10001", "N": "10001 11001 10101 10011 10001 10001 10001",
+    "O": "01110 10001 10001 10001 10001 10001 01110", "P": "11110 10001 10001 11110 10000 10000 10000",
+    "Q": "01110 10001 10001 10001 10101 10010 01101", "R": "11110 10001 10001 11110 10100 10010 10001",
+    "S": "01111 10000 10000 01110 00001 00001 11110", "T": "11111 00100 00100 00100 00100 00100 00100",
+    "U": "10001 10001 10001 10001 10001 10001 01110", "V": "10001 10001 10001 10001 10001 01010 00100",
+    "W": "10001 10001 10001 10101 10101 10101 01010", "X": "10001 10001 01010 00100 01010 10001 10001",
+    "Y": "10001 10001 01010 00100 00100 00100 00100", "Z": "11111 00001 00010 00100 01000 10000 11111",
+    "0": "01110 10011 10101 10101 10101 11001 01110", "1": "00100 01100 00100 00100 00100 00100 01110",
+    "2": "01110 10001 00001 00010 00100 01000 11111", "3": "11110 00001 00001 01110 00001 00001 11110",
+    "4": "00010 00110 01010 10010 11111 00010 00010", "5": "11111 10000 11110 00001 00001 10001 01110",
+    "6": "01110 10000 10000 11110 10001 10001 01110", "7": "11111 00001 00010 00100 01000 01000 01000",
+    "8": "01110 10001 10001 01110 10001 10001 01110", "9": "01110 10001 10001 01111 00001 00001 01110",
+    "!": "00100 00100 00100 00100 00100 00000 00100", "?": "01110 10001 00001 00110 00100 00000 00100",
+    "&": "01100 10010 10100 01000 10101 10010 01101", "-": "00000 00000 00000 11111 00000 00000 00000",
+    " ": "00000 00000 00000 00000 00000 00000 00000",
+}
+WALLS = {   # what a wall is made of, and its base color
+    "brick": (0.55, 0.27, 0.2), "concrete": (0.6, 0.6, 0.58), "metal": (0.5, 0.52, 0.55), "wood": (0.5, 0.37, 0.24)}
+
+
+def graffiti_words(text, n=8):
+    """What fits on a wall: letters and digits from the font, at most n, no doubled spaces."""
+    t = re.sub(r"[^A-Z0-9!?&\- ]", "", str(text or "").upper())
+    return re.sub(r"\s+", " ", t).strip()[:n].strip()
+
+
+def normalize_graffiti(raw, kind, material, place, tag_name):
+    """Turn whatever the model said into a piece the painter can always paint."""
+    raw = raw if isinstance(raw, dict) else {}
+    colors = [c for c in (hex_rgb(x) for x in (raw.get("colors") or [])[:3] if isinstance(raw.get("colors"), list)) if c]
+    default = [(0.95, 0.3, 0.55), (1.0, 0.82, 0.25), (0.2, 0.75, 0.95)]
+    colors += default[len(colors):]
+    words = graffiti_words(raw.get("words")) or graffiti_words(tag_name) or "SPK"
+    return {"kind": kind if kind in KINDS else "tag", "material": material if material in MATERIALS else "concrete",
+            "place": place, "words": words, "tag_name": graffiti_words(tag_name, 6) or "SPK",
+            "colors": ["#%02x%02x%02x" % tuple(int(v * 255) for v in c) for c in colors[:3]],
+            "picture": str(raw.get("picture") or "").strip().lower()[:20],
+            "title": re.sub(r"\s+", " ", str(raw.get("title") or words.title())).strip()[:40] or words.title()}
+
+
+def _wall(sc, material, rng):
+    w, h = sc.w, sc.h
+    base = WALLS[material]
+    sc.rect(0, 0, w, h, base)
+    if material == "brick":
+        bh, bw = 14, 34
+        for row, y in enumerate(range(0, h, bh)):
+            off = (row % 2) * bw // 2
+            for x in range(-off, w, bw):
+                sc.rect(x + 1, y + 1, x + bw - 1, y + bh - 1, mix(base, (rng.random(),) * 3, 0.12))
+            sc.rect(0, y, w, y + 1, (0.72, 0.7, 0.66))
+    elif material == "metal":
+        for x in range(0, w, 12):
+            sc.rect(x, 0, x + 6, h, mix(base, (0.8, 0.82, 0.85), 0.18))
+        for _ in range(8):
+            sc.ellipse(rng.uniform(0, w), rng.uniform(0, h), rng.uniform(6, 24), rng.uniform(4, 14), (0.55, 0.3, 0.15), 0.35)
+    elif material == "wood":
+        for y in range(0, h, 25):
+            sc.rect(0, y + 1, w, y + 24, mix(base, (rng.random() * 0.5 + 0.25,) * 3, 0.15))
+            sc.rect(0, y, w, y + 1, (0.25, 0.18, 0.12))
+    for _ in range(int(w * h / 50)):   # grit
+        i = rng.randrange(w * h)
+        sc.px[i] = mix(sc.px[i], (rng.random(),) * 3, 0.15)
+
+
+def _letters(sc, words, x0, y0, cell, fill, fill2, line, rng, s, bubble, slant=0.0):
+    """Letters from the 5x7 font, `cell` pixels per dot. Returns each letter's (left, right, bottom) for drips."""
+    boxes = []
+    pen = x0
+    for ch in words:
+        rows = FONT.get(ch, FONT[" "]).split()
+        wob = (1 - s) * cell * 0.6
+        dy = rng.uniform(-wob, wob)
+        pts = [(pen + c * cell + (6 - r) * cell * slant, y0 + dy + r * cell)
+               for r, row in enumerate(rows) for c, bit in enumerate(row) if bit == "1"]
+        rad = cell * (0.95 if bubble else 0.75)
+        for outline, (size, col) in enumerate(((rad + cell * (0.45 + 0.25 * s), line), (rad, None))):
+            for x, y in pts:
+                c = col or mix(fill, fill2, (y - y0) / (7 * cell))
+                if outline and rng.random() < (1 - s) * 0.15:
+                    c = mix(c, (rng.random(), rng.random(), rng.random()), 0.4)    # a sloppy can
+                sc.ellipse(x + cell / 2, y + cell / 2, size, size, c)
+        if s > 0.4 and pts:                                                   # good letters get a highlight
+            x, y = min(pts, key=lambda p: (p[1], p[0]))
+            sc.ellipse(x + cell / 2, y + cell / 2, cell * 0.3, cell * 0.3, (1, 1, 1), 0.8)
+        if pts:
+            boxes.append((min(p[0] for p in pts), max(p[0] for p in pts) + cell, max(p[1] for p in pts) + cell))
+        pen += 6 * cell
+    return boxes
+
+
+def make_graffiti(plan, skill, seed, w=400, h=300):
+    """A piece of graffiti on a wall, as a PNG. Tags are quick one-color handstyles, throw-ups are
+    two-color bubble letters, murals are a little painted scene with bubble letters across it."""
+    rng = random.Random(seed)
+    s = max(0.0, min(1.0, skill / 10))
+    sc = Scene(w, h)
+    _wall(sc, plan["material"], rng)
+    c1, c2, c3 = (hex_rgb(c) for c in plan["colors"])
+    words, kind = plan["words"], plan["kind"]
+    if kind == "mural":
+        iw, ih = int(w * 0.84), int(h * 0.66)
+        pic = plan["picture"]
+        scene_plan = normalize_plan({"focal": pic if pic in FOCALS else "mountain",
+                                     "bird": "bolt" if pic in ("crow", "bolt") else "me" if pic in ("jay", "me", "bird", "") else "none",
+                                     "mood": "bright", "palette": plan["colors"], "detail": 0.3, "brush": 0.7},
+                                    plan["place"], "day", "clear")
+        rgb = paint(build_scene(scene_plan, skill, rng, iw, ih), scene_plan, skill, rng)
+        ox, oy = (w - iw) // 2, int(h * 0.06)
+        for y in range(ih):
+            for x in range(iw):
+                edge = min(x, y, iw - 1 - x, ih - 1 - y)
+                a = 1.0 if edge > 6 else max(0.0, edge / 6 - rng.random() * 0.3)       # sprayed, soft edges
+                j = (y * iw + x) * 3
+                i = (oy + y) * w + ox + x
+                sc.px[i] = mix(sc.px[i], (rgb[j] / 255, rgb[j + 1] / 255, rgb[j + 2] / 255), a)
+        cell = max(4, min(9, int(w * 0.8 / max(1, len(words)) / 6)))
+        y0 = h - 7 * cell - int(h * 0.08)
+    elif kind == "throwup":
+        cell = max(6, min(16, int(w * 0.86 / max(1, len(words)) / 6)))
+        y0 = (h - 7 * cell) // 2
+    else:
+        cell = max(4, min(10, int(w * 0.7 / max(1, len(words)) / 6)))
+        y0 = (h - 7 * cell) // 2 + rng.randint(-20, 20)
+    x0 = (w - len(words) * 6 * cell) // 2
+    if kind == "tag":
+        boxes = _letters(sc, words, x0, y0, cell, c1, c1, mix(c1, (0, 0, 0), 0.5), rng, s, False, slant=0.12)
+        sc.rect(x0, y0 + 8 * cell, x0 + len(words) * 6 * cell, y0 + 8 * cell + max(2, cell // 2), c1)   # the swoosh
+    else:
+        if s > 0.3:      # a drop shadow, once he knows how
+            dark = (0.08, 0.08, 0.1)
+            _letters(sc, words, x0 + cell * 0.6, y0 + cell * 0.6, cell, dark, dark, dark, random.Random(seed), 1.0, True)
+        boxes = _letters(sc, words, x0, y0, cell, c1, c2, c3 if kind == "mural" else (0.06, 0.06, 0.08), rng, s, True)
+    for x_lo, x_hi, y_bot in boxes:   # drips: more of them, and longer, when he's sloppy
+        for _ in range(rng.randint(0, 1 + int(4 * (1 - s)))):
+            dx = rng.uniform(x_lo, x_hi)
+            sc.rect(dx, y_bot, dx + 2, y_bot + rng.uniform(6, 10 + 40 * (1 - s)), c1 if kind == "tag" else c2)
+    for _ in range(int(400 * (1 - s)) + 60):   # overspray
+        sc.ellipse(rng.uniform(x0 - 20, x0 + len(words) * 6 * cell + 20), rng.uniform(y0 - 20, y0 + 9 * cell), 1, 1, c1, 0.5)
+    if kind != "tag":                         # his signature, small, bottom right, with a little blue crest
+        sx, sy = (int(w * 0.8), int(h * 0.9)) if kind == "throwup" else (16, 10)   # murals: top left, clear of it all
+        _letters(sc, plan["tag_name"], sx, sy - 7, 2, JAY_BLUE, JAY_BLUE, (0.05, 0.05, 0.08), rng, 1.0, False)
+        sc.poly([(sx - 10, sy + 6), (sx - 4, sy - 8), (sx - 2, sy + 6)], JAY_BLUE)
+    out = bytearray(w * h * 3)
+    for i, (r, g, b) in enumerate(sc.px):
+        out[i * 3], out[i * 3 + 1], out[i * 3 + 2] = int(clamp01(r) * 255), int(clamp01(g) * 255), int(clamp01(b) * 255)
+    return png_bytes(w, h, bytes(out))
